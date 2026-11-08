@@ -111,3 +111,72 @@ Without those files the scripts in this project cannot work and making them work
 
 ---
 
+### Default choices
+
+This is a list of system choices that I made in advance for customising the Porteus **moonwalker** edition.
+
+1. The script is not executable by default, hence it requires to be run by a shell. An extra caution: even if it requires root password, the session could be already on sudo or root.
+
+2. I [decided](https://chatgpt.com/share/67e01ea8-a0f4-8012-9178-48d1c76337e9) to go without a journal within the persistent loop file because it is saved on a VFAT. It is faster and stresses the USB key less, and thus increases its durability.
+
+3. To mitigate the Kiosk mode drawbacks, the lazy init of the EXT4 creates I/O workload until the filesystem is finalised and it depends on its size, both variants are limited to fit into a 2GB usbkey. In the LIVE this brings to have almost the same free space in the two partitions.
+
+4. The size of the persistent loop file has been set to 128Mb in such a way there will be 430MB c.a. of free space to install optional modules. As much as the whole Porteus base.
+
+5. With `--ext4-install`, the EFI boot partition size is 16 MB and remains 4 MB free by default with Porteus 5.01. It contains iso/syslinux and lilo stuff, the kernel and initrd.
+
+6. The file `cmdline.txt` contains options for kernel line, by default it sets `noswap` and activate the IOMMU in passtrought mode for those machine that support it in full. The swap is not just a bottleneck but a performance killer, let the users deal with it manually when they desperately need it, only.
+
+---
+
+### Suggested choices
+
+A set of choices that every Porteus user is going to face soon or later. The suggestions are not intended to be *good for all* but as a reasonable starting point for those whom are not technically skilled and might be puzzled by the great amount of choices that also live distro like Porteus can offer.
+
+Some are *matter of taste* and in that cases, the most widespread options (or likely the most suitable similars) are chosen in order to let the beginners have as much large user-base as possible for asking support. Statistically speaking, giving them the highest chance to find someone that had solved those issues they most probably may face.
+
+Porteus version: **MATE**
+
+- Ubuntu is one of the most wide-spread and well-known Linux distributions.
+- Ubuntu uses Gnome3 and the 2nd most appreciated flavour is the Mate one.
+- Mate is based on Gnome2 and old PCs running Linux were usually adopting it.
+
+USB stick: **Samsung FIT plus** [64GB](https://ssd-tester.com/samsung_fit_plus_64gb.html)
+
+- It is very short, preventing USB port damage, essential for long-term use.
+- Despite its size it is quite generous in size and [pretty fast](img/1st-topperf-branded-nano-usbstick.png) with USB 3.1.
+- Whenever an old laptop/PC hasn't 3.x, exchanging data on 3.1 is faster.
+- Check in the ThinkPaa X201 section [about](#about-other-busesports) using an micro-SD card, instead.
+
+Full installation:
+
+- Using `--ext4-install` implies that writing data is going to be a routine.
+- The [256GB](https://ssd-tester.com/samsung_fit_plus_256gb.html) for a physical EXT4 persistence is 3x faster in WR on USB 3.x.
+- If SATA2+ is available, at half of the price a 240GB+ [SSD](https://ssd-tester.com/sata_ssd_test.php?sort=250+GB) is another 3x faster.
+- If USB 3.x then a SATA [adapter](https://raw.githubusercontent.com/festonolo/light-os/refs/heads/main/img/usb3-sata3-adapter-with-plastic-case.webp) w/ABS case ($4) is faster, cheaper & easier.
+
+Transition 5.x:
+
+- Currently the v5.1 is in alpha2 stage but old applications can still working adding a [transitional](https://tinyurl.com/22r4jnf5) modules
+- Since [v0.3.6](https://github.com/festonolo/light-os/tree/v0.3.6) the scripts support the addition of this module (as example, not granted supports all apps)
+- Among applications, two in particular are included into suggested extra modules: remmina and netsurf.
+
+Data encryption:
+
+- It is unnecessary as long as we are using Porteus as testing/rescue distro.
+- It is suggested for privacy when an external USB is used for personal needs.
+- It is mandatory when we expect, even occasionally, to bring it out with us.
+
+Download mirrors list:
+
+- [porteus.org/porteus-mirrors.html](https://porteus.org/porteus-mirrors.html)
+
+- [porteus-mirror-allhttps.txt](porteus-mirror-allhttps.txt) (local)
+
+Installation tested:
+
+- [Porteus-MATE-v5.01-x86_64.iso](https://linux.rz.rub.de/porteus/x86_64/current/Porteus-MATE-v5.01-x86_64.iso) (mainly)
+
+- [Porteus-LXQT-v5.01-x86_64.iso](https://linux.rz.rub.de/porteus/x86_64/current/Porteus-LXQT-v5.01-x86_64.iso) (for QT lovers)
+
+---
