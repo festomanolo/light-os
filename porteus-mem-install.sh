@@ -378,3 +378,110 @@ function update_partition_table() {
 }
 
 # ------------------------------------------------------------------------------
+# RAF: TODO: here is better to use mktemp, instead
+#
+dst="/tmp/usb"
+src="/tmp/iso"
+mem="/tmp/mem"
+
+printf \\n"INFO: wake-up the chosen device and rescan the partitions, wait..."\\n
+eject -t /dev/${dev}  # RAF: give the device a wake-up, just in case
+sleep 0.25
+partprobe
+
+echo
+echo "RUNNING: $shs writes on /dev/$dev with extfs:$extfs"
+echo "         ISO filepath: $iso"
+echo "         kernel. opts: ${kargs:-(none)}"
+echo; fdisk -l /dev/${dev} >/dev/null || errexit $?
+{     fdisk -l /dev/${dev}
+      echo
+      smartctl -H -d scsi /dev/${dev} 2>/dev/null | grep -i health ||:
+      echo
+      mount | cut -d\( -f1 | grep "/dev/${dev}" | sort -n \
+  | sed -e "s,^.*$,& <-- MOUNTED !!," | grep . ||:
+} | sed -e "s,^.*$,\t &,"
+besure "WARNING
+WARNING: data on '/dev/$dev' and its partitions will be permanently LOST !!
+WARNING
+WARNING: Are you sure to proceed" || errexit
+if ! is_menu_mode; then
+    check_dmsg_for_last_attached_scsi "$dev"
+fi
+
+if [ -n "$sync_pid" -a -e /proc/$sync_pid ]; then
+    perr \\n"WARNING: system busy, waiting for sync (pid:$sync_pid) returns..."\\n
+    wait $sync_pid
+else
+    perr \\n"INFO: before proceding sync the system I/O pending operations, wait..."\\n
+fi
+sync;sync;sync
+
+# Clear previous failed runs, eventually
+umount_all
+echo
+if mount | grep /dev/${dev}; then
+    perr \\n"ERROR: device /dev/${dev} is busy, abort!"\\n
+    errexit
+fi
+mkdir -p ${dst} ${src} ${mem}
+
+declare -i AVAIL_MEMORY=$(get_avail_mem) IMGSIZE=0
+test ${AVAIL_MEMORY} -gt 800 && IMGSIZE=700
+
+# Keep the time from here #_____________________________________________________
+
+declare -i tms=$(date +%s%N)
+
+# RAF: zeroing the filesystem signatures prevents automounting #________________
+
+printf "INFO: invalidating all previous filesystem signatures"
+if which wipefs >/dev/null; then
+    printf " ... "
+    { timereal "
+        wipefs --all /dev/${dev}1 /dev/${dev}2 2>/dev/null ||:; 
+        #ddsync : if=/dev/zero bs=1M count=1 of=/dev/${dev}"; 
+    } 2>&1 | grep -v 'offset 0x' ||:
+    printf "INFO: invalidating all previous partitions"
+fi
+printf ", wait..."\\n\\n
+bs="4M"; for i in /dev/${dev}?; do # "1M" /dev/${dev}; do
+    if [ "${i:0:1}" != "/" ]; then bs=$i; continue; fi
+    if [ ! -b $i ]; then test -f $i && rm -f $i; continue; fi
+    ddsync : if=/dev/zero bs=$bs count=1 of=$i
+done | grep . || echo "nothing to do"
+
+# Write MBR and essential partition table #_____________________________________
+
+printf \\n"INFO: writing the MBR and preparing essential partitions, wait... "\\n\\n
+mount -t tmpfs tmpfs ${dst}
+zcat "${mbr}" >${dst}/mbr.ing; new_disk_id ${dst}/mbr.ing
+ddsync errexit bs=1M iflag=fullblock if=${dst}/mbr.ing of=/dev/${dev}
+devflush; waitdev ${dev}1; rm -f ${dst}/mbr.ing
+echo
+
+if is_ext4_install; then # --------------------------------------------- EXT4 --
+    str="EFIBOOT"
+    update_partition_table "d_n_p_1_ _+16M_y_t_7_a_n_p_2_ _+1880M_"
+    declare -i nb=$(get_diskpart_size 1)
+    printf "\\nINFO: creating a tmpfs image (szb:$nb) to init VFAT partition ... "
+    if ! timereal "dd if=/dev/zero count=$nb of=${dst}/vfat.img status=none;
+                   mkfs.vfat -n $str -aI ${dst}/vfat.img"
+    then rm -f ${dst}/vfat.img; umount ${dst}; errexit; fi
+    mount -o loop ${dst}/vfat.img ${dst}
+    mount | grep -qw ${dst}/vfat.img || errexit
+    waitdev ${dev}1; waitdev ${dev}2
+else # ----------------------------------------------------------------- VFAT --
+    str="porteus"
+    update_partition_table "d_n_p_1_ _+1200M_y_t_7_a_n_p_2_ _+700M_"
+    waitdev ${dev}1
+    printf "\\nINFO: writing creating VFAT $str filesystem ... "
+    timereal mkfs.vfat -a -F32 -n "PORTEUS" /dev/${dev}1
+    printf "\\nINFO: mounting /dev/${dev}1 on ${dst}, wait..."\\n
+    devflush 1 ; waitdev ${dev}1
+    mount -o async,noatime /dev/${dev}1 ${dst}
+    mount | grep -qw /dev/${dev}1 || errexit
+    waitdev ${dev}2
+fi #----------------------------------------------------------------------------
+# RAF: at this point VFAT image or partition is formated and mounted -----------
+
