@@ -64,3 +64,50 @@ This will overwrite data on /dev/sda installing a working EXT4 system.
 In this example the `/dev/sdb` is the usbstick while the `/dev/sda` is the internal storage device which is installed from scratch  (**WARNING**: data loss). For example, writing at 40M/s (USB 2.0) on average, it takes less than a minute for completing the installation.
 
 ---
+
+### Preview on 13yo laptop
+
+The ThinkPad X220 was released in April 2011 and was produced until mid-to-late 2012, when it was replaced by the ThinkPad X230. Today, it is a 13yo device and can be bought for around $100 as refurbished or used unit, only. Old but not obsolete.
+
+In fact, it supports SATA2 SSD and 16GB of DDR3 RAM despite its specification indicates 8GB as maximum. While models with the i7-2620M typically include USB 3.0 support, also. However, usually it comes with 4GB of RAM, a 2.5" SATA HDD and USB 2.0, only. 
+
+Porteus 5.01 Mate booting from an old SanDisk Cruzer Fit 32GB USB 2.0 and running on an ultra-old Thinkpad X220 equipped with 4GB of RAM. The storage stick is inserted in the USB 2.0 port, on the bottom left angle, and it is so short that it cannot even be seen without checking for it specifically for it.
+
+<div align="center"><img src="img/x220-porteus-mate-boot-and-desktop.jpg" width="100%"></div><br>
+
+How long does it take to prepare such a USB 2.0 stick with a 30MB/s of writing transfer rate? In about 30 seconds (since v0.3.x) with 128MB of persistence. Almost all the time is spent in writing the USB, hence that matters is the writing speed and data size.
+
+#### About other buses/ports
+
+An alternative to using a USB pendrive, is leveraging the internal u/SD reader, if it exists to save a USB port. In this case, it is useful to keep in mind that such embedded readers, like the one included into the Thinkpad **X201**, is limited by the USB version bus bandwidth. In that case the keywords for choosing a u/SD card are: `U3` and `A2` as mandatory, while `v30` and `XCI` as desirable.
+
+So, it does not provide any advantages over the USB bus, and the same **might** apply also to the ExpressCard/54 slot using an adapter working as an USB device and limited to 133 MB/s on those rare units that have the USB 3.0. Instead, using the ExpressCard/54 with a PCIe adapter it can work at 250 MB/s which is near the 300M MB/s available on the internal SATA2.
+
+In conclusion, a USB 2.0 laptop will be limited at 480 Mbps in accessing storage devices unless SATA2 or EC54/PCie is used. And in this particular case, the adoption of a ExpressCard/54 USB 3.0 adapter can provide that upgrade needed to leverage faster USB devices with low power consumption otherwise an extra power source is required.
+
+Instead, the **X220**'s u/SD card reader is on the PCIe bus, so it is faster than USB 2.0 but is not among the bootable devices, unfortunately. However, there are two ways to overcome this issue: 
+
+1. using [Coreboot](https://stoisavljevic.com/articles/coreboot) (aka LinuxBIOS) which is out of the chance of many;
+
+2. boot from an USB device and with the u/SD into the internal reader, and the USB port **can** be freed ASAP the kernel + initrd image are loaded into the RAM, or later.
+
+Noticeably, the USB boot can be replaced by the network boot initiated by the BIOS, or by an internal S/ATA device with a multi-OS bootloader for which Porteus on u/SD can be an alternative to Windows installed into the internal storage device. Just for sake of completeness, some micro-SD to SD form adapters are not working but fortunately `sudo dmesg -w` immediately tells about.
+
+#### Booting from u/SD
+
+The most convenient way to boot from a non-USB u/SD embedded card reader is to install a specific boot option into your grub/windows for a multi-boot system, or create the u/SD as an Moonwalker's Porteous EXT4/INST and the other one as VFAT/LIVE. In that way the usbstick will serve as repair, maintenance and booting device while the other as a main installed Porteus. Alternatively, both devices in EXT4/INST and on the USB the 2nd partition can be formatted or removed (e.g. by gparted), to gain more free space.
+
+---
+
+### Huston, we have a problem
+
+On 25th March 2025, all Porteus mirrors are presenting zeroed sha256sums.txt, and it is quite a thing!
+
+![sha256sum files missing](img/porteus-iso-sha256sum-compromised.png)
+
+- Source: [A post of mine on forum.porteus.org](https://forum.porteus.org/viewtopic.php?p=102450#p102450)
+
+Without those files the scripts in this project cannot work and making them working is unacceptably insecure.
+
+---
+
