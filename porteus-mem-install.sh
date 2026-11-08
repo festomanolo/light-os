@@ -610,3 +610,82 @@ fi #----------------------------------------------------------------------------
 
 # echo; mount | grep ${ext4img}; echo; df -h | tail -n4; echo; exit
 
+# Unmount source and eject USB device #_________________________________________
+set +e
+
+function flush_umount_device() {
+    local i; 
+    if false && [ -e /proc/sys/kernel/sysrq ]; then
+        while grep -Eq "${dev}[1-2]*$" /proc/partitions; do sleep 360
+            echo s >/proc/sys/kernel/sysrq 2>/dev/null; done &
+    fi
+    devflush
+    (
+        nice -19 sync -f ${dst}/*.txt 2>/dev/null &
+        devflush 1; umount /dev/${dev}1 
+        devflush 2; umount /dev/${dev}2
+        umount_all ||:; wait
+
+        for i in ${dst} ${src} /dev/${dev}?; do
+            while mount | grep -wq $i; do
+                umount $i && break
+                sleep 1
+            done
+        done 
+    ) 2>&1 | grep -v ": not mounted."
+    
+    { mount | grep /dev/${dev} && echo; }| sed -e "s/.\+/ERROR: &/" >&2
+}
+
+printf \\n"INFO: minute(s) long WAITING for the unmount synchronisation ... "
+timereal flush_umount_device
+
+printf \\n"INFO: resizing EXT4 filesystem to fill the partition ... "
+timereal "
+    fsck -yf /dev/${dev}2
+    resize2fs /dev/${dev}2
+" 2>/dev/null
+echo
+if [ "$journal" == "yes" ]; then
+    printf \\n"INFO: creating the journal and then checking ... "
+    timereal tune2fs -U random -O fast_commit -J size=16 /dev/${dev}2
+fi
+for i in 1 2; do
+    for n in 1 2 3; do
+        fsck -yf /dev/${dev}$i && break
+        echo
+    done
+    echo
+done
+
+# Say goodbye and exit #________________________________________________________
+
+mkdir -p   ${dst}1 ${dst}2
+mount /dev/${dev}1 ${dst}1
+mount /dev/${dev}2 ${dst}2
+mkdir_guestmp_dirs ${dst}2
+udsc="$(df -h | grep -e /dev/${dev} -e Filesyst)"
+flush_umount_device
+
+if [ "$DEVEL_ZEROING" == "1" ]; then
+    perr "WARNING"\\n
+    perr "WARNING: devel zeroing ... "
+    timereal ddsync : if=/dev/zero bs=1M count=1 of=/dev/${dev}
+    perr "WARNING"\\n\\n
+    devflush; partprobe
+fi
+
+while ! eject /dev/${dev}
+    do sleep 1; done
+let tms=($(date +%s%N)-$tms+500000000)/1000000000
+if is_ext4_install; then str="EXT4"; else str="LIVE"; fi
+printf "INFO: Creation $str usbstick completed in $tms seconds."\\n\\n
+echo "$udsc"; echo
+printf "DONE: Your bootable USB key ready to be removed safely."\\n\\n
+for i in $(pgrep -x "sleep"); do cat /proc/$i/cmdline |\
+    tr -d '\0' | grep -q sleep360 && kill $i; done 2>/dev/null
+trap - EXIT
+wait
+
+fi #############################################################################
+
