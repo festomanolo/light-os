@@ -662,3 +662,99 @@ fi
 
 echo; test "$yet2cfg" == "yes" && porteus_configure
 
+# Unmount source and eject USB device #_________________________________________
+set +e
+
+function flush_umount_device() {
+    local i; 
+    if false && [ -e /proc/sys/kernel/sysrq ]; then
+        while grep -Eq "${dev}[1-2]*$" /proc/partitions; do sleep 360
+            echo s >/proc/sys/kernel/sysrq 2>/dev/null; done &
+    fi
+    devflush
+    (
+        nice -19 sync -f ${dst}/*.txt 2>/dev/null &
+        devflush 1; umount /dev/${dev}1 
+        devflush 2; umount /dev/${dev}2
+        umount_all ||:; wait
+
+        for i in ${dst} ${src} /dev/${dev}?; do
+            while mount | grep -wq $i; do
+                umount $i && break
+                sleep 1
+            done
+        done 
+    ) 2>&1 | grep -v ": not mounted."
+    
+    { mount | grep /dev/${dev} && echo; }| sed -e "s/.\+/ERROR: &/" >&2
+}
+
+function enfore_allfs_checks() {
+    local i n op=$1
+    for i in 1 2; do
+        for n in 1 2 3; do
+            fsck -y$op /dev/${dev}$i && break
+            echo
+        done
+        echo
+        op=f
+    done 2>&1 | tabout
+}
+
+print_dtms "" "INFO: minute(s) long WAITING for the unmount synchronisation ... "
+timereal flush_umount_device
+
+function make_tune2fs_journal() { {
+    local d=/dev/${dev}2
+    { fsck -yf $d || fsck -y $d || fsck -y $d ||:; } \
+        2>&1 | grep -v "^e2fsck [0-9.]\+ ("   ||:
+    tune2fs -U random -O fast_commit -J size=16 $d
+} 2>&1 | tabout; }
+
+if [ "$journal" == "yes" ]; then
+    print_dtms \\n "INFO: creating the journal and then checking ... "
+    timereal make_tune2fs_journal
+fi
+
+if false; then
+    print_dtms \\n "INFO: resizing EXT4 data partition to fit the whole disk ... "
+    echo 'd_2_n_p_2_ _ _n_w' | tr '_' '\n' | fdisk /dev/${dev} >$redir 2>&1
+    d=/dev/${dev}2; timereal "waitdev 2; fsck -yf $d; resize2fs $d" 2>/dev/null
+fi
+
+print_dtms \\n "INFO: enforcing filesystems consistency checks, wait..."\\n\\n
+enfore_allfs_checks
+
+# Say goodbye and exit #________________________________________________________
+
+mk_tmp_dir
+udsc="$(df -h | grep -e /dev/${dev} -e Filesyst | tabout)"
+flush_umount_device
+
+let nsec=($(date +%s%N)-$tms+500000000)/1000000000
+print_dtms "" "INFO: Creation $usb_type usbstick completed in $nsec seconds."\\n\\n
+echo "$udsc"
+
+if [ "$DEVEL_ZEROING" == "1" ]; then
+    perr \\n
+    perr "WARNING"\\n
+    perr "WARNING: devel zeroing ... "
+    timereal "
+        ddsync : if=/dev/zero count=4 of=/dev/${dev}2 oflag=nonblock
+        ddsync : if=/dev/zero count=4 of=/dev/${dev}1 oflag=nonblock
+        ddsync : if=/dev/zero count=1 of=/dev/${dev}  oflag=nonblock
+    "
+    perr "WARNING"\\n
+    devflush; partprobe
+fi
+
+printf \\n"device ejecting, wait... "\\n\\n | tabout
+while ! eject /dev/${dev} 2>/dev/null; do sleep 1; printf .; done
+print_dtms "" "DONE: Your bootable USB key ready to be removed safely."\\n\\n
+for i in $(pgrep -x "sleep"); do cat /proc/$i/cmdline |\
+    tr -d '\0' | grep -q sleep360 && kill $i; done 2>/dev/null
+trap - EXIT
+wait
+
+fi #############################################################################
+
