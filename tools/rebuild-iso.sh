@@ -45,3 +45,15 @@ if [ -z "$OUTPUT_ISO" ]; then
     OUTPUT_ISO="$REPO_DIR/LightOS-${BASE_NAME#LightOS-}"
 fi
 OUTPUT_ISO="$(cd "$(dirname "$OUTPUT_ISO")" && pwd)/$(basename "$OUTPUT_ISO")"
+
+echo "[Light OS] Input ISO : $INPUT_ISO"
+echo "[Light OS] Output ISO: $OUTPUT_ISO"
+
+mkdir -p "$HOME/.cache"
+WORKDIR="$HOME/.cache/lightos-iso-rebuild.$$"
+ISOROOT="$WORKDIR/isoroot"
+mkdir -p "$ISOROOT"
+
+cleanup() {
+    if [ -n "${MNT_DIR:-}" ]; then
+        if [ "$(uname -s)" = "Darwin" ]; then
