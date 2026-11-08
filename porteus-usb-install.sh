@@ -108,3 +108,96 @@ if is_on_demand; then
 fi
 
 ################################################################################
+if asking_help; then usage errexit 0; else ##################################
+
+function missing() {
+    perr \\n"ERROR: file '${1:-}' is missing or wrong type, abort!"\\n
+    usage errexit
+}
+
+function besure() {
+    local ans
+    echo
+    read -p "${1:-Are you sure to continue}? [N/y] " ans
+    ans=${ans^^}; test "${ans:0:1}" == "Y" || return 1
+}
+
+function agree() {
+    local ans
+    echo; read -p "${1:-Are you sure to continue}? [Y/n] " ans
+    ans=${ans^^}; test "${ans:0:1}" != "N" || return 1
+}
+
+function waitdev() {
+    local i d=${dev}$1
+    for i in $(seq 1 100); do
+        sleep 0.1
+        partprobe
+        if grep -q " $d$" /proc/partitions; then
+            test -b /dev/$d
+            return $?
+        fi; printf .
+    done
+    perr \\n"ERROR: waitdev('$d') failed, abort!"\\n
+    errexit
+}
+
+function make4fs() {
+    local lbl=$1 dev=$2; shift 2
+    { mkfs.ext4 -L "$lbl" ${make_ext4fs_options} -F $dev "$@" || errexit; } \
+        2>&1 | grep -v "^mke2fs [0-9.]\+ (" ||:
+}
+
+scsi_str=""; scsi_dev="";
+function find_last_attached_scsi_unit() {
+    local str lst
+    str=$(dmesg | grep "] sd .* removable disk" | tail -n1)
+    lst=$(echo "$str" | sed -ne "s,.*\[\(sd.\)\].*,\\1,p")
+    if [ ! -n "$lst" ]; then
+        str=$(dmesg | grep "\[sd[a-z]\] .* removable disk" | tail -n1)
+        lst=$(echo "$str" | sed -ne "s,.*\[\(sd.\)\].*,\\1,p")
+    fi
+    scsi_str="$str"
+    scsi_dev="$lst"
+}
+
+function check_last_attached_scsi_unit() {
+    local dev=$1
+    echo
+    if [ ! -b /dev/$dev ]; then
+        perr "WARNING: error '${dev:+/dev/$dev}' is not a block device, abort!"\\n
+        errexit
+    fi
+    if [ ! -n "$scsi_dev" ]; then
+        perr "WARNING: to write on '/dev/$dev' but unable to find the last attached unit."\\n
+        besure || errexit
+    elif [ "$scsi_dev" != "$dev" ]; then
+        perr "WARNING: to write on '/dev/$dev' but '/dev/$scsi_dev' is the last attached unit."\\n
+        perr \\n"$scsi_str"\\n
+        besure || errexit
+    else
+        echo "$scsi_str"
+    fi
+}
+
+function check_dmsg_for_last_attached_scsi() {
+    find_last_attached_scsi_unit     # producer
+    check_last_attached_scsi_unit $1 # user
+    scsi_str=""; scsi_dev=""         # consumer
+}
+
+time='time -freal:%es\n'
+
+function timereal() {
+    local time=${time:-time -freal:%es\n}
+    ( eval "${@:-false}" || echo "real:error($?)" )  \
+         | $time cat 2>&1 | grep -e "real:."
+}
+
+function umount_all() {
+    local ret=0 i; for i in 1 2 3; do
+        umount ${src} ${dst} ${mem} /dev/${dev}* ||:
+    done 2>/dev/null
+}
+
+################################################################################
