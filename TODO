@@ -9,3 +9,20 @@
 - start using porteus-v5.x-x86_64.cfg because /boot /EFI updates.
   - check about renaming porteus-v5.x-x86_64.cfg in porteus.cfg.
 
+# DONE
+
+v test to deal with EXT4 and sync/umount in background while writing VFAT.
+v test a different order of umount compared with the current (v0.3.1).
+v write the VFAT in a tmpfs loop and dd in its partition as speed test.
+v add "noswap", because swap is a performance killer.
+v download ALL the SHA256 checksum files
+v include the cvt + xrandr tweak for DVI to VGA adapters at 1280x1024.
+  v .xprofile/session should deal with the DVI-VGA adapters
+v move all git contribs into a tree for porteus/rootcopy/ dir.
+
+# DEVEL
+
+- short link for the script on the last tags v0.3.6: tinyurl.com/287pzck5
+- short link for the script on the main head: tinyurl.com/2bn89qqo (RISKY!!)
+- bash <(wget -qO- $url) to run on demand from remote the net install script
+
