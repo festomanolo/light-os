@@ -33,3 +33,15 @@ if [ -z "$INPUT_ISO" ]; then
     done
 fi
 
+if [ -z "$INPUT_ISO" ] || [ ! -r "$INPUT_ISO" ]; then
+    echo "ERROR: Input Porteus ISO not found. Pass path as first argument:" >&2
+    echo "  bash tools/rebuild-iso.sh /path/to/Porteus.iso [output.iso]" >&2
+    exit 1
+fi
+
+INPUT_ISO="$(cd "$(dirname "$INPUT_ISO")" && pwd)/$(basename "$INPUT_ISO")"
+if [ -z "$OUTPUT_ISO" ]; then
+    BASE_NAME="$(basename "$INPUT_ISO")"
+    OUTPUT_ISO="$REPO_DIR/LightOS-${BASE_NAME#LightOS-}"
+fi
+OUTPUT_ISO="$(cd "$(dirname "$OUTPUT_ISO")" && pwd)/$(basename "$OUTPUT_ISO")"
