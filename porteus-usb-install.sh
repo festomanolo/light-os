@@ -324,3 +324,138 @@ test -n "$kmp" && kargs="kmap=$kmp ${kargs}"
 redir="/dev/null"; isdevel && redir="/dev/stdout"
 
 ################################################################################
+
+trap 'umount_all &' EXIT
+
+# ---------------------------------------------------------------------- FUNC --
+
+function spcut() { tr -s ' ' | cut -d ' ' -f$1; }
+
+function is_ext4_install() { test $extfs -eq 4; }
+
+function get_diskpart_size() { 
+    declare -i nb;
+    if ! cat /sys/block/${dev}$1/size 2>/dev/null; then
+        nb=$(sed -ne "s,.* \([0-9]\+\) *${dev}$1$,\\1,p" /proc/partitions)
+        echo $[nb*2] # RAF: in /proc/partition #blocks are 1KB not 512-bytes
+    fi
+}
+
+function devflush() {
+    blockdev --flushbufs /dev/${dev}$1 || hdparm -f /dev/${dev} || sleep 1
+}
+
+function ddsync() {
+    local alt=$1; shift;
+    { dd "$@" bs=1M oflag=dsync 2>&1 || $1; }| grep -v "records" ||:
+}
+
+function smart_make_ext4() {
+    local opts="${make_ext4_nojournal} ${make_ext4fs_lazyone}"
+    # declare -i ng max=512 # RAF, TODO: 32 but differentiate 2.0 from 3.0, helps
+    # let ng=($(get_diskpart_size)/2048)/1024
+    # if [ $ng -ge $max -a "$journal" == "yes" ]; then
+    echo
+    if ! is_ext4_install; then
+        #perr "INFO: usbstick size $ng GiB < $max Gib, init journal with mkfs."\\n
+        print_dtms "" "INFO: journaling INIT, will be added WHILE copying ... "
+        opts="${make_ext4fs_notlazy} -J size=16"
+        journal="no"
+    else
+        print_dtms "" "INFO: journaling SKIP, will be added AFTER copying ... "
+    fi
+    timereal make4fs "$1" $2 $opts
+    echo
+}
+
+function mk_tmp_dir() {
+    local d2=${dst}2 d1=${dst}1
+    mkdir -p ${d1} ${d2}
+    mount /dev/${dev}1 ${d1}
+    mount /dev/${dev}2 ${d2}
+    mkdir -p ${d2}/tmp
+    chmod a+wrx ${d2}/tmp
+}
+
+function new_disk_id() {
+    local diskid=$(echo $RANDOM | md5sum | head -c8)
+    echo "x_i_0x${diskid}_r_w" | tr '_' '\n' | fdisk $1 >/dev/null ||:
+}
+
+function get_avail_mem() {
+    echo $(free -m | sed -ne "s/Mem:.* \([0-9]\+\)/\\1/p")
+    return $?
+#   local ms="MemAvailable"
+#   declare -i mbmem=$(sed -ne "s/$ms:.* \([0-9]\+\) kB/\\1/p" /proc/meminfo)
+#   let mbmem/=1024; echo $mbmem; return 0
+}
+
+function dofdisk() { 
+    { echo "${1}w" | tr _ '\n' | fdisk $2 || errexit; } >$redir 2>&1
+}
+
+# ------------------------------------------------------------------------------
+# RAF: TODO: here is better to use mktemp, instead
+#
+dst="/tmp/usb"
+src="/tmp/iso"
+mem="/tmp/mem"
+
+printf \\n"INFO: wake-up the chosen device and rescan the partitions, wait..."\\n
+# RAF: give the device a wake-up, just in case
+str=$(eject -t /dev/${dev} 2>&1 ||:)
+if [ ! -n "$str" ]; then
+    sleep 0.25
+    partprobe
+elif echo "$str" | grep -q "CD-ROM"; then
+    CDROM=1
+else
+    echo "$str" >&2
+    errexit
+fi
+
+echo
+echo "RUNNING: $shs writes on /dev/$dev with extfs:$extfs"
+echo "         ISO filepath: $iso"
+echo "         kernel. opts: ${kargs:-(none)}"
+echo; fdisk -l /dev/${dev} >/dev/null || errexit $?
+{     fdisk -l /dev/${dev}
+  if [ "$CDROM" != "1" ]; then
+      echo # RAF: this check takes too long, skipping when CDROM=1
+      smartctl -H -d scsi /dev/${dev} 2>/dev/null | grep -i health ||: 
+  fi
+      echo
+      mount | cut -d\( -f1 | grep "/dev/${dev}" | sort -n \
+  | sed -e "s,^.*$,& <-- MOUNTED !!," | grep . ||:
+} | sed -e "s,^.*$,\t &,"
+besure "WARNING
+WARNING: data on '/dev/$dev' and its partitions will be permanently LOST !!
+WARNING
+WARNING: Are you sure to proceed" || errexit
+if ! is_menu_mode; then
+    check_dmsg_for_last_attached_scsi "$dev"
+fi
+
+if [ -n "$sync_pid" -a -e /proc/$sync_pid ]; then
+    perr \\n"WARNING: system busy, waiting for sync (pid:$sync_pid) returns..."\\n
+    sleep 0.25; sync; wait $sync_pid ||:; sync; sync
+else
+    perr \\n"INFO: before proceding sync the system I/O pending operations, wait..."\\n
+    sleep 0.25; sync; sync; sync
+fi
+
+str=$(lsof /dev/${dev}* 2>/dev/null ||:)
+test -n "$str" && printf \\n"$str"\\n
+
+# Clear previous failed runs, eventually
+umount_all
+echo
+if mount | grep /dev/${dev}; then
+    perr \\n"ERROR: device /dev/${dev} is busy, abort!"\\n
+    errexit
+fi
+mkdir -p ${dst} ${src} ${mem}
+
+declare -i AVAIL_MEMORY=$(get_avail_mem) IMGSIZE=0
+test ${AVAIL_MEMORY} -gt 800 && IMGSIZE=700
+
