@@ -1,0 +1,11 @@
+# TODO
+
+- check for coherence among ALL the SHA256 checksum files.
+- ask for selecting the fastest mirror ONLY when downloading ISO or modules.
+- if many ISO files have been found, let the user choose among them.
+- evaluate to add zram swap for those case can make a difference.
+  - rc.local additions about swapability (60) and set it to five.
+  - rc.local umount all devices which are not the current root.
+- start using porteus-v5.x-x86_64.cfg because /boot /EFI updates.
+  - check about renaming porteus-v5.x-x86_64.cfg in porteus.cfg.
+
