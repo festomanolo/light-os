@@ -80,3 +80,15 @@ else
         MNT_DIR="$WORKDIR/mnt"
         mkdir -p "$MNT_DIR"
         mount -o loop,ro "$INPUT_ISO" "$MNT_DIR"
+        cp -a "$MNT_DIR"/. "$ISOROOT"/
+        umount "$MNT_DIR"
+        MNT_DIR=""
+    fi
+fi
+
+chmod -R u+w "$ISOROOT"
+
+# 2. Apply efiboot customizations (Moonwalker boot screen)
+echo "[Light OS] Injecting efiboot assets..."
+if [ -d "$REPO_DIR/efiboot" ]; then
+    cp -af "$REPO_DIR/efiboot"/. "$ISOROOT"/
