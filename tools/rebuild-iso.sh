@@ -92,3 +92,15 @@ chmod -R u+w "$ISOROOT"
 echo "[Light OS] Injecting efiboot assets..."
 if [ -d "$REPO_DIR/efiboot" ]; then
     cp -af "$REPO_DIR/efiboot"/. "$ISOROOT"/
+    rm -f "$ISOROOT/boot/syslinux/black.png" "$ISOROOT/boot/syslinux/bootlogo.png" 2>/dev/null || :
+fi
+
+# 3. Apply rootcopy customizations (udev USB unplug auto-reboot, wallpapers, dconf)
+echo "[Light OS] Injecting rootcopy customizations (including udev unplug auto-reboot)..."
+if [ -d "$REPO_DIR/rootcopy" ]; then
+    mkdir -p "$ISOROOT/porteus/rootcopy"
+    cp -RLf "$REPO_DIR/rootcopy"/. "$ISOROOT/porteus/rootcopy"/
+    if [ -r "$ISOROOT/porteus/rootcopy/home/guest/.config/dconf/porteus.gz" ]; then
+        gzip -dc "$ISOROOT/porteus/rootcopy/home/guest/.config/dconf/porteus.gz" \
+            > "$ISOROOT/porteus/rootcopy/home/guest/.config/dconf/porteus"
+    fi
