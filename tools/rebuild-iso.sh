@@ -163,3 +163,15 @@ elif command -v docker >/dev/null 2>&1; then
                  -l -J -joliet-long -R -D \
                  -A '$CDLABEL' -V '$CDLABEL' \
                  -no-emul-boot -boot-info-table -boot-load-size 4 \
+                 -b boot/syslinux/isolinux.bin \
+                 -c boot/syslinux/isolinux.boot \
+                 /work/isoroot && \
+               isohybrid '/work/$OUT_FILE' 2>/dev/null || true"
+    mv -f "$WORKDIR/$OUT_FILE" "$OUTPUT_ISO"
+else
+    echo "ERROR: Neither xorriso, mkisofs, nor docker found to pack the ISO." >&2
+    exit 1
+fi
+
+ls -lh "$OUTPUT_ISO"
+echo "[Light OS] Successfully rebuilt ISO: $OUTPUT_ISO"
