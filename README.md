@@ -180,3 +180,48 @@ Installation tested:
 - [Porteus-LXQT-v5.01-x86_64.iso](https://linux.rz.rub.de/porteus/x86_64/current/Porteus-LXQT-v5.01-x86_64.iso) (for QT lovers)
 
 ---
+
+### Usage, quick & dirty
+
+This little script downloads and immediately puts in execution the network installation . Which download the MATE version of the official Porteus ISO and a compressed archive of this repository chosen from [tags](https://github.com/festonolo/light-os/tags) available. Check the [TODO](TODO) for knowing in advance about development and possible shortcomings.
+
+```
+mkdir -p usbtest; cd usbtest
+tagver="v0.3.6" # To replace with the latest available in tags
+rawurl="https://raw.githubusercontent.com/festonolo"
+rawurl="$rawurl/light-os/refs/tags/$tagver"
+rawurl="$rawurl/porteus-net-install.sh"
+DEVEL=0 # bash <(wget -qO- $net_inst_url)
+```
+
+At this point everything is ready to write the USB stick for having the desidered installation. It can be done by the USB installation script which requires `root` privileges. Because mistakes happen, the most safe way to proceed is to create a bootable USB stick in the way you're used to and transfer all the stuff into another USB stick.
+
+Booting Porteus in RAM-only (Flash) mode, it will be possible to execute the scripts on the 2nd USB stick to install on the first which will be erased, or another one. In the future a 2nd USB key would not be necessary. A specific script will do everything in a RAM-only (Flash) running Porteuse, zeroing every risk.
+
+```
+mkdir -p usbtest; cd usbtest
+wget -qO- http://alturl.com/ggvaa | tar xvz
+mv light-os-main moonwalker
+DEVEL=0 # bash moonwalker/porteus-net-install.sh
+# or to simulate a remote call
+# DEVEL=0 # bash <(cat moonwalker/porteus-net-install.sh)
+```
+
+If &ndash; **for you** &ndash; the shell code above does nothing, then it is ok in that way: do not use it. ;-)
+
+---
+
+### Future improvements
+
+The script requires `bash` because it uses bashims. This should change in future, because I want to make it working also with busybox `a/sh`. Plus, before moving to try it on different systems than my laptop, I wish to create a net-installer that downloads all my stuff and the ISO and does the magic. This make sense because Porteus has the all-in-memory mode so we can download the ISO and write it directly on as USB:
+
+- `wget -O- $url | sudo dd bs=1M of=/dev/sdx`
+
+Then we can put that USB into a laptop/PC, boot in all-in-memory mode, clone the git and re-write that USB within a safe environment. Which is the reason because `dd` uses the `seek` option creating a virtual file that does not waste space, in evoluted filesystem that allows holes into files, at least.
+
+When that file is copied into the VFAT32, then the holes are filled with zeros, hopefully. In fact, `cp` is supposed to not access the underlying physical device unless the kernel allocated blocks into the file instead of holes. This implies that we do not need extra 512Mb of free memory (or 128Mb per the last v0.2.5 version) to create those files but much less (c.a. 10Mb). While `/boot` `/syslinux` and `/porteus` folders are - supposedly - loaded in RAM, so we can rewrite the USB stick reading from the RAM filesystem.
+
+If you would like to know more about future planning, read the [BOFH as lifestyle manifesto](bofh-as-life-style-manifesto.txt).
+
+---
+
