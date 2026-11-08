@@ -64,3 +64,57 @@ function search() {
     done; return 1
 }
 
+# RAF: basic common check & set #_______________________________________________
+
+if isondemand; then
+    wdr=$PWD
+    perr "###############################################"
+    perr "This is an on-demand from remote running script"
+    perr "###############################################"
+fi
+
+workingd_path=$(dirname $(realpath "$0"))
+download_path=${download_path:-$PWD}
+if [ "$(basename $PWD)" != "$store_dirn" ]; then
+    download_path="$download_path/$store_dirn"
+fi
+
+if isdevel; then
+    perr "download path: $download_path\nworkingd path: $workingd_path"
+else
+    # RAF: this could be annoying for DEVs but is an extra safety USR checkpoint
+    sudo -k
+fi
+
+# RAF: internal check & set and early functions #_______________________________
+
+function pn_wget_log() { printf "%02d-$wgetlogtail" $1; }
+function wgetlogs_ls() { command ls -1 ??-$wgetlogtail 2>/dev/null ||:; }
+function rm_wget_log() { rm -f *$wgetlogtail* *$sha256_file; }
+
+################################################################################
+if askinghelp; then usage errexit 0;
+elif [ "x$1" == "x--clean" ]; then #############################################
+    rm_wget_log; rm -f $mirror_file $netlog_file; printf "\ndone.\n\n"
+else ###########################################################################
+
+trap "echo; echo; exit 1" INT
+
+perr "-> pwd: $PWD"
+
+list=$(wget -qO- https://porteus.org/porteus-mirrors.html |\
+    sed -ne 's,.*<a href="\([^"]*\)".*,\1,p')
+list="$list
+$(cat $mirror_list 2>/dev/null ||:)"
+list=$(echo "$list" | sed -e "s,http:,https:," |\
+     sort | uniq | grep . | tee $mirror_list)
+
+echo
+declare -i nmlst=$(wc -l $mirror_list | cut -d' ' -f1)
+printf "Sending one ping to all $nmlst the mirrors, DNS caching ... "
+for i in $(echo "$list" | cut -d/ -f3); do
+    ping -w1 -W1 -c 1 -q $i &
+done >/dev/null 2>&1
+echo "done"
+
+printf "\nDownload speed testing for every mirror, wait.\n"
