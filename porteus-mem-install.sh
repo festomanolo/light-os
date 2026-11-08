@@ -485,3 +485,128 @@ else # ----------------------------------------------------------------- VFAT --
 fi #----------------------------------------------------------------------------
 # RAF: at this point VFAT image or partition is formated and mounted -----------
 
+function cpvfatext4() {
+    ({ cp "$@" || errexit; } 2>&1 | grep -v "failed to preserve ownership" ||:)
+}
+
+function copy_core_files_to_dst() {
+    local dst=$1 dev=
+    printf "INFO: copying Porteus core system files ... "
+    timereal cpvfatext4 -arf ${src}/*.txt ${src}/porteus ${dst}
+    if [ -n "${bsi}" ]; then
+        lpd=${dst}/porteus/rootcopy
+        mkdir -p ${lpd}/usr/share/wallpapers/
+        cp ${bgi} ${lpd}/usr/share/wallpapers/porteus.jpg
+        chmod a+r ${lpd}/usr/share/wallpapers/porteus.jpg
+        printf \\n"INFO: custom background '${bgi}' copied"\\n
+    fi
+    dev=$(df | sed -ne "s,\(/dev/loop[0-9]\+\) .*${dst}$,\\1,p" ||:)
+    test -b "$dev" && blockdev --flushbufs ${dev} ||:
+}
+
+function copy_boot_files_to_dst() {
+    mount -o loop,ro ${iso} ${src} || errexit
+    printf "INFO: copying Porteus EFI/boot files from ISO file ... "
+    timereal cpvfatext4 -arf ${src}/boot ${src}/EFI ${dst}
+    test -r ${dst}/${cfg} || missing ${dst}/${cfg}
+    str=" ${kargs}"; is_ext4_install || str="/${sve} ${kargs}"
+    sed -e "s,APPEND changes=/porteus$,&${str}," -i ${dst}/${cfg}
+    echo; grep -n "APPEND changes=/porteus${str}" ${dst}/${cfg}
+    if test -n "${bsi}" && cp -f ${bsi} ${dst}/boot/syslinux/porteus.png; then
+        printf \\n"INFO: custom boot screen background '${bsi}' copied"\\n
+    fi
+}
+
+# Copying Porteus files from ISO file #________________________________
+
+echo
+copy_boot_files_to_dst ${dst}
+if is_ext4_install; then # --------------------------------------------- EXT4 --
+    :
+else # ----------------------------------------------------------------- VFAT --
+    echo
+    copy_core_files_to_dst ${dst}
+fi # ---------------------------------------------------------------------------
+
+# Creating persistence loop filesystem or umount #______________________________
+
+if is_ext4_install; then # --------------------------------------------- EXT4 --
+    umount ${dst}
+    printf \\n"INFO: writing the VFAT loopfile to /dev/${dev}1, wait..."\\n\\n
+    ddsync errexit if=${dst}/vfat.img bs=1M of=/dev/${dev}1
+    devflush 1; rm -f ${dst}/vfat.img; umount ${dst}; echo
+else # ----------------------------------------------------------------- VFAT --
+    printf \\n"INFO: writing the EXT4 persistence file to changes, wait..."\\n\\n
+    dd if=/dev/zero count=1 seek=${blocks} of=${sve} status=none
+    make4fs 'changes' ${sve} ${make_ext4_nojournal} ${make_ext4fs_lazyone} >$redir
+    d=${dst}/porteus; mkdir -p $d; str="cp -f ${sve} $d"
+    printf "$str ... "; timereal "$str"; rm -f ${sve}
+    # RAF: using cp instead of mv because it handles the sparse
+fi # ---------------------------------------------------------------------------
+
+if false; then
+    df -h | tail -n4; mount | grep -e sda -e iso -e tmpfs
+    exit
+
+    printf \\n"INFO: umounting all USB partitions ... "
+    timereal umount /dev/${dev}? ||:
+fi
+
+# Copying Porteus system and modules from ISO file #____________________________
+
+ext4img="ext4fs.img"
+dd_bs1m_zeroing() { dd if=/dev/zero bs=1M status=none "$@"; }
+do_mount_tmpfs_ext4img() {
+    local dst=${mem} str=$1; shift
+    mkdir -p ${dst}; mount -t tmpfs tmpfs ${dst}
+    timereal dd_bs1m_zeroing of=${dst}/${ext4img} "$@"
+    smart_make_ext4 "$str" ${dst}/${ext4img}
+    mount -o loop ${dst}/${ext4img} ${dst}
+}
+
+if false; then
+    mount | grep /dev/${dev} && \
+        printf "WARNING: bug detcted, this partitions should not mounted!"\\n
+    update_partition_table "n_p_2_ _ _"
+fi
+
+{ devflush 1; umount ${dst} 2>/dev/null ||:; } & umdstpid=$!
+
+if is_ext4_install; then # --------------------------------------------- EXT4 --
+    str="porteus"
+    if [ $IMGSIZE -gt 0 ]; then
+        printf "INFO: creating the EXT4 $str filesystem in the MEM ... "
+        do_mount_tmpfs_ext4img "$str" seek=$[IMGSIZE-16] count=16 conv=sparse
+        copy_core_files_to_dst ${mem}; umount ${mem}; sync ${mem}/${ext4img}
+        printf "\\nINFO: copying the EXT4 $str to the USB, wait... "\\n\\n
+        ddsync errexit if=${mem}/${ext4img} bs=1M of=/dev/${dev}2 conv=sparse
+        printf \\n"INFO: short waiting (pid:$umdstpid) for the VFAT unmount, wait... "\\n
+        wait $umdstpid ||: #| $time cat
+    else
+        printf \\n"INFO: short waiting (pid:$umdstpid) for the VFAT unmount, wait... "\\n
+        wait $umdstpid ||: #| $time cat
+        printf \\n"INFO: creating the EXT4 $str filesystem on the USB ... "
+        timereal smart_make_ext4 "$str" /dev/${dev}2
+        mount -o async,noatime /dev/${dev}2 ${dst}
+        copy_core_files_to_dst ${dst}
+    fi #2>&1|grep -e "real:." -e " \.\.\. $"
+else # ----------------------------------------------------------------- VFAT --
+    str="usrdata"
+    if [ ${AVAIL_MEMORY} -gt 64 ]; then #RAF: 16M is the journal size, then x4
+        printf \\n"INFO: creating the EXT4 $str filesystem in the MEM ... "
+        do_mount_tmpfs_ext4img "$str" seek=$[64-16] count=16 conv=sparse
+        umount ${mem}
+        printf "INFO: copying the EXT4 $str to the USB, wait... "\\n\\n
+        ddsync errexit if=${mem}/${ext4img} bs=1M of=/dev/${dev}2 conv=sparse
+        printf \\n"INFO: loOng WAITING (pid:$umdstpid) for the VFAT unmount, wait... "\\n
+        wait $umdstpid ||: #| $time cat
+    else
+        printf \\n"INFO: loOng WAITING (pid:$umdstpid) for the VFAT unmount, wait... "\\n
+        wait $umdstpid ||: #| $time cat
+        printf \\n"INFO: creating the EXT4 $str filesystem on the USB ... "
+        timereal smart_make_ext4 "$str" /dev/${dev}2
+    fi #2>&1|grep -e "real:." -e " \.\.\. $"
+fi #----------------------------------------------------------------------------
+
+# echo; mount | grep ${ext4img}; echo; df -h | tail -n4; echo; exit
+
