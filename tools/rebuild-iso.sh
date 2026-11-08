@@ -21,3 +21,15 @@ CDLABEL="PORTEUS"
 
 if [ -z "$INPUT_ISO" ]; then
     # Auto-detect ISO in repo, moonwalker/, or ~/Downloads
+    for cand in \
+        "$REPO_DIR"/*.iso \
+        "$REPO_DIR"/moonwalker/*.iso \
+        "$HOME/Downloads"/Porteus-*.iso \
+        "$HOME/Downloads"/*porteus*.iso; do
+        if [ -f "$cand" ] && [[ "$(basename "$cand")" != LightOS-* ]]; then
+            INPUT_ISO="$cand"
+            break
+        fi
+    done
+fi
+
