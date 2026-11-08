@@ -139,3 +139,15 @@ if command -v xorriso >/dev/null 2>&1; then
         -v -l -J -joliet-long -R -D \
         -A "$CDLABEL" -V "$CDLABEL" \
         -no-emul-boot -boot-info-table -boot-load-size 4 \
+        -b boot/syslinux/isolinux.bin \
+        -c boot/syslinux/isolinux.boot \
+        "$ISOROOT"
+elif command -v mkisofs >/dev/null 2>&1 || command -v genisoimage >/dev/null 2>&1; then
+    MKISO="$(command -v mkisofs || command -v genisoimage)"
+    "$MKISO" -o "$OUTPUT_ISO" \
+        -v -l -J -joliet-long -R -D \
+        -A "$CDLABEL" -V "$CDLABEL" \
+        -no-emul-boot -boot-info-table -boot-load-size 4 \
+        -b boot/syslinux/isolinux.bin \
+        -c boot/syslinux/isolinux.boot \
+        "$ISOROOT"
