@@ -104,3 +104,15 @@ if [ -d "$REPO_DIR/rootcopy" ]; then
         gzip -dc "$ISOROOT/porteus/rootcopy/home/guest/.config/dconf/porteus.gz" \
             > "$ISOROOT/porteus/rootcopy/home/guest/.config/dconf/porteus"
     fi
+    chmod a+rx "$ISOROOT/porteus/rootcopy/usr/local/bin"/*.sh 2>/dev/null || :
+fi
+
+# 4. Copy any extra .xzm modules in repo root or moonwalker/
+for xzm in "$REPO_DIR"/*.xzm "$REPO_DIR"/moonwalker/*.xzm; do
+    if [ -f "$xzm" ]; then
+        echo "[Light OS] Bundling extra module: $(basename "$xzm")"
+        cp -f "$xzm" "$ISOROOT/porteus/modules/"
+    fi
+done
+
+# 5. Update syslinux/porteus.cfg with TIMEOUT 5 and cmdline.txt (copy2ram, etc.)
