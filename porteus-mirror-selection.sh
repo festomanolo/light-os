@@ -118,3 +118,66 @@ done >/dev/null 2>&1
 echo "done"
 
 printf "\nDownload speed testing for every mirror, wait.\n"
+echo; #set -x # RAF, TODO: this part is still working in progress... (WIP!!)
+declare -i n=0 errf=-1
+for i in $list STOP; do
+    if [ $errf -eq 1 ]; then
+        mv $fn $fn.invalid
+        printf "KO: discarded due to useless or invalid $sha256_file\n\n"
+    elif [ $errf -eq 2 ]; then
+        mv $fn $fn.failure
+        printf "KO: discarded due to wget downloading failure\n\n"
+    fi
+    test "$i" == "STOP" && break
+    test $errf -eq 0 && printf "\n"
+    let n++ ||:; errf=1
+    fn=$(pn_wget_log $n)
+    url=$i/$arch/$vers
+    printf "%02d: $i\n" $n | tee $fn
+    nn=$(printf "%02d" $n); svf=$nn-$sha256_file
+    wget --timeout=5 -qO- $url/$sha256_file >$svf     || continue
+    grep -qi "porteus-${porteus_type}" $svf           || continue
+    wget --timeout=5 -O- >/dev/null $url/$dtst 2>>$fn || continue
+
+    #ddlm="256" # data transfer in kb
+    #wget --timeout=5 -O- $url/$dtst 2>>$fn |\
+    #    dd of=/dev/null bs=${ddlm}k count=1 iflag=fullblock 2>&1 |\
+    #        sed -ne "s/.* kB, $ddlm KiB)/$nn:\t$ddlm Kib/p"
+
+    wlst="$wlst $i"; errf=0;
+done; # set +x
+
+# RAF: an alternative using dd which can be leveraged to cap the download size
+# wget --timeout=1 -qO- $url | dd bs=1500 count=5k iflag=fullblock of=/dev/null\
+#   2>&1 | sed -ne "/bytes/s/.* s, \(.*\)/\\1/p" | tr [gmk] [GMK]
+
+topl=$(grep "written" $(wgetlogs_ls) /dev/null|\
+    sed -e "s,:.*(\(.*\)).*,: \\1," | tr -d . |\
+    sed -e "s, MB/s,0 KB/s," | sort -rnk 2)
+if [ ! -n "$topl" ]; then
+    perr "ERROR: no any valid or suitable mirror found, abort!" >&2
+    errexit
+fi
+winr=$(echo "$topl" | head -n1 2>/dev/null ||:)
+wfln=$(echo "$winr" | cut -d: -f1)
+strn=$(head -n1 "$wfln" | cut -d' ' -f2)
+winr=$(echo "$winr" | sed -e "s,-$wgetlogtail,,")
+echo
+echo "$topl"
+echo
+echo "Fastest --> $strn <-- $winr"
+echo
+
+echo $strn | cut -d' ' -f2 > $mirror_file
+cat ${winr:0:2}-$sha256_file >$sha256_file
+
+for i in $(wgetlogs_ls); do
+    cat $i; printf "===\n\n"
+done > $netlog_file; #rm_wget_log
+echo "updated '$mirror_file' file"
+echo "updated '$mirror_list' file"
+echo "created '$netlog_file' file"
+echo
+
+fi #############################################################################
+
