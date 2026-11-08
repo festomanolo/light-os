@@ -263,3 +263,118 @@ Executing shell script from: $wdr
                     by user: ${SUDO_USER:+$SUDO_USER as }${USER} 
                       devel: ${DEVEL:-unset}"
 
+if is_menu_mode; then
+    # RAF: selecting the device by insertion is the most user-friendly way to go
+    while true; do
+        find_last_attached_scsi_unit
+        test -b /dev/$scsi_dev && break
+        echo
+        read -p "Waiting for the USB stick insertion, press ENTER to continue";
+        sleep 1
+    done
+    echo
+    echo "$scsi_str"
+    agree "This above is the last unit attached, select it" || usage errexit
+    dev=$scsi_dev
+
+    # RAF: auto-selection for ISO, priority: 1. folder; 2. newest
+    for d in . "${store_dirn}" "$wdr"; do
+        iso=$(command ls -1t "$d"/*.iso "$d"/*.ISO 2>/dev/null ||:)
+        test -n "$iso" && break
+    done
+    # RAF, TODO: if many ISO found, let the user choose among them
+    iso=$(echo "$iso" | head -n1)
+    test -r "$iso" || missing "ISO:${iso:- not found}"
+    agree "Is this '$iso' the ISO file you want use" || usage errexit
+
+    while true; do
+        if agree "Do you want an EXT4 installation"; then
+            extfs=4; break
+        elif agree "Do you want a LIVE for sporadic use" ; then
+            extfs=0; break
+        fi
+    done
+
+    echo; read -p \
+"Please provide the 2-letter keyboard language,
+or press ENTER for leave the current settings: " kmp
+fi
+
+# Deciding about keyboard layout
+test -n "$kmp" && kargs="kmap=$kmp ${kargs}"
+
+# Deciding about output redirection
+redir="/dev/null"; isdevel && redir="/dev/stdout"
+
+################################################################################
+
+trap 'umount_all &' EXIT
+
+# ---------------------------------------------------------------------- FUNC --
+
+function spcut() { tr -s ' ' | cut -d ' ' -f$1; }
+
+function is_ext4_install() { test $extfs -eq 4; }
+
+function get_diskpart_size() { 
+    declare -i nb;
+    if ! cat /sys/block/${dev}$1/size 2>/dev/null; then
+        nb=$(sed -ne "s,.* \([0-9]\+\) *${dev}$1$,\\1,p" /proc/partitions)
+        echo $[nb*2] # RAF: in /proc/partition #blocks are 1KB not 512-bytes
+    fi
+}
+
+function devflush() {
+    blockdev --flushbufs /dev/${dev}$1 || hdparm -f /dev/${dev} || sleep 1
+}
+
+function ddsync() {
+    local alt=$1; shift; { dd "$@" oflag=dsync 2>&1 || $1; }| grep -v "records"
+}
+
+function smart_make_ext4() {
+    local opts="${make_ext4_nojournal} ${make_ext4fs_lazyone}"
+    # declare -i ng max=512 # RAF, TODO: 32 but differentiate 2.0 from 3.0, helps
+    # let ng=($(get_diskpart_size)/2048)/1024
+    # if [ $ng -ge $max -a "$journal" == "yes" ]; then
+    echo
+    if [ ! -b "$2" ] ; then
+        #perr "INFO: usbstick size $ng GiB < $max Gib, init journal with mkfs."\\n
+        printf "INFO: journaling INIT, will be added WHILE copying ... "
+        opts="${make_ext4fs_notlazy} -J size=16"
+        journal="no"
+    else
+        printf "INFO: journaling SKIP, will be added AFTER copying ... "
+    fi
+    timereal make4fs "$1" $2 $opts
+    echo
+}
+
+function mkdir_guestmp_dirs() {
+    test -d "$1" || return 1
+    mkdir $1/guest $1/tmp
+    chown 1000:100 $1/guest $1/tmp
+    chmod a+wrx $1/tmp
+}
+
+function new_disk_id() {
+    local diskid=$(echo $RANDOM | md5sum | head -c8)
+    echo "x_i_0x${diskid}_r_w" | tr '_' '\n' | fdisk $1 >/dev/null ||:
+}
+
+function get_avail_mem() {
+    echo $(free -m | sed -ne "s/Mem:.* \([0-9]\+\)/\\1/p")
+    return $?
+#   local ms="MemAvailable"
+#   declare -i mbmem=$(sed -ne "s/$ms:.* \([0-9]\+\) kB/\\1/p" /proc/meminfo)
+#   let mbmem/=1024; echo $mbmem; return 0
+}
+
+function diskflush_partporbe() { devflush; sleep 0.25; partprobe; }
+
+function update_partition_table() { 
+    echo "${1}w" | tr _ '\n' | fdisk /dev/${dev} >$redir; 
+    diskflush_partporbe
+}
+
+# ------------------------------------------------------------------------------
