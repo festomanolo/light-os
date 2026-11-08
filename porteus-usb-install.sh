@@ -539,3 +539,78 @@ else # ----------------------------------------------------------------- VFAT --
 
 fi # ---------------------------------------------------------------------------
 
+# Copying Porteus EFI/boot files from ISO file #________________________________
+
+function _cpvfatext4() {
+    local opt="-L"; is_ext4_install && opt=""
+    ({ cp  -arf $opt "$@" || errexit; } 2>&1 |\
+        grep -v "failed to preserve ownership" ||:)
+}
+
+function cpvfatext4 {
+    timereal _cpvfatext4 "$@"
+}
+
+mount -o loop,ro ${iso} ${src} || errexit
+print_dtms \\n "INFO: copying ${porteus^} EFI/boot files from ISO file ... "
+cpvfatext4 ${src}/boot ${src}/EFI ${dst}
+
+# RAF: these executables might not work w/moonwalker edition
+rm -f ${dst}/boot/*.{com,exe,run} 2>/dev/null ||:
+
+# RAF: copy the boot logo and similar stuff, then removed 
+_cpvfatext4 efiboot/* ${dst}/
+if is_real_porteus; then
+    rm -f ${dst}/boot/syslinux/{black,bootlogo}.png
+else
+    rm -f ${dst}/boot/syslinux/porteus.png
+fi
+
+function porteus_configure() {
+    local str i f="${dst}/${porteus}/${porteus}.cfg"
+    if false && [ -r $f ]; then
+        str="chages=/${porteus}"
+        is_ext4_install || str="${str}/${sve}"
+        for i in ${str} ${kargs}; do echo "$i" >>$f; done
+        cat $f | cut -d\# -f1 | grep . | tr '\n' ' ' |\
+            { grep . && echo; } | tabout
+    elif [ -r ${dst}/${cfg} ]; then
+        str=" ${kargs}"; is_ext4_install || str="/${sve} ${kargs}"
+        sed -e "s,APPEND changes=[^/]*/${porteus}$,&${str}," -i ${dst}/${cfg}
+        grep -n "APPEND changes=[^/]*/${porteus}${str}" ${dst}/${cfg} | tabout
+    else
+        return 1
+    fi
+    return 0
+}
+
+yet2cfg="yes"; porteus_configure && yet2cfg="no"
+
+# Creating persistence loop filesystem or umount #______________________________
+
+function create_and_copy_changes_loopfile() {
+    local d opts="${make_ext4_nojournal} ${make_ext4fs_lazyone}"
+    ddzero count=1 seek=${blocks} of=${sve} status=none
+    make4fs 'changes' ${sve} $opts
+    d=${dst}/${porteus}; mkdir -p $d
+    cp -f ${sve} $d; rm -f ${sve}
+}
+
+if is_ext4_install; then # --------------------------------------------- EXT4 --
+    umount ${dst}
+    print_dtms \\n "INFO: writing the VFAT loopfile to usbstick, wait..."\\n\\n
+    printf "/dev/${dev}1: " | tabout
+    ddsync errexit if=${dst}/vfat.img of=/dev/${dev}1
+    devflush 1; rm -f ${dst}/vfat.img; umount ${dst}
+    mount -o async,noatime /dev/${dev}2 ${dst}
+else # ----------------------------------------------------------------- VFAT --
+    print_dtms \\n "INFO: writing the EXT4 persistence file to changes ... "
+    timereal "create_and_copy_changes_loopfile"
+    # RAF: using cp instead of mv because it handles the sparse
+if false; then
+    d=${dst}/${porteus}; mkdir -p $d
+    str="cp -f ${sve} $d"; printf "$str ... "
+    timereal "$str"; rm -f ${sve}
+fi
+fi # ---------------------------------------------------------------------------
+
