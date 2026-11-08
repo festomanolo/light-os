@@ -459,3 +459,83 @@ mkdir -p ${dst} ${src} ${mem}
 declare -i AVAIL_MEMORY=$(get_avail_mem) IMGSIZE=0
 test ${AVAIL_MEMORY} -gt 800 && IMGSIZE=700
 
+# Keep the time from here #_____________________________________________________
+
+print_dtms() {
+    local nl=$1; shift
+    let dtms=($(date +%s%N)-$tms+5000000)/10000000 ||:
+    printf "${nl}>[%3d.%02d] $@" $[dtms/100] $[dtms%100]
+}
+declare -i nsec dtms tms=$(date +%s%N)
+
+function ddzero() {
+    { dd if=/dev/zero oflag=nonblock "$@" 2>&1 || errexit; } |\
+        grep -v "records" ||:;
+}
+
+# RAF: zeroing the filesystem signatures prevents automounting #________________
+
+print_dtms "" "INFO: invalidating all previous filesystem signatures"
+if which wipefs >/dev/null; then
+    printf " ... "
+    timereal "wipefs --all /dev/${dev}1 /dev/${dev}2 2>/dev/null ||:" \
+        2>&1 | grep -v 'offset 0x' ||:
+    print_dtms "" "INFO: invalidating all previous partitions"
+fi
+printf ", wait..."\\n\\n
+for i in /dev/${dev}1 /dev/${dev}2; do
+    if [ ! -b $i ]; then rm -f $i; continue; fi
+    printf "$i: "; ddzero bs=1M count=4 of=$i
+done |{ grep --color=never . || echo "nothing to do."; } | tabout
+i=/dev/${dev}; if [ -b $i ]; then
+    ddzero of=$i count=1 status=none; fi
+
+# Write MBR and essential partition table #_____________________________________
+
+print_dtms \\n "INFO: writing the MBR and preparing essential partitions, wait... "\\n\\n
+mount -t tmpfs tmpfs ${dst} 
+printf "/dev/${dev}: " | tabout
+f=${dst}/mbr.img; zcat "${mbr}" >$f; new_disk_id $f
+ddsync errexit iflag=fullblock if=$f of=/dev/${dev}
+for i in "" 1 2; do devflush $i ||:; done >/dev/null 2>&1
+waitdev 1; rm -f $f
+
+# Write EXT4 partition #________________________________________________________
+
+if is_ext4_install; then # --------------------------------------------- EXT4 --
+    dofdisk "d_n_p_1_ _+16M_y_t_7_a_n_p_2_ _+1880M_" /dev/${dev}
+    devflush; waitdev 2
+    smart_make_ext4 "${porteus}" /dev/${dev}2
+    usb_type="EXT4/INST"
+else # ----------------------------------------------------------------- VFAT --
+    dofdisk "d_n_p_1_ _+1200M_y_t_7_a_n_p_2_ _+700M_" /dev/${dev}
+    devflush; waitdev 2
+    smart_make_ext4 "usrdata" /dev/${dev}2
+    usb_type="VFAT/LIVE"
+fi #----------------------------------------------------------------------------
+
+waitdev 2; umount /dev/${dev}? 2>/dev/null ||:
+
+#exit
+
+# Write VFAT partition #________________________________________________________
+
+if is_ext4_install; then # --------------------------------------------- EXT4 --
+    declare -i nb=$(get_diskpart_size 1)
+    print_dtms "" "INFO: creating a tmpfs image (szb:$nb) to init VFAT partition ... "
+    ddzero count=$nb of=${dst}/vfat.img status=none
+    if ! timereal mkfs.vfat -n EFIBOOT -aI ${dst}/vfat.img; then
+        rm -f ${dst}/vfat.img; umount ${dst}; errexit
+    fi
+    mount -o loop ${dst}/vfat.img ${dst}
+else # ----------------------------------------------------------------- VFAT --
+    str="${porteus}"
+    print_dtms "" "INFO: writing creating VFAT $str filesystem ... "
+    timereal mkfs.vfat -a -F32 -n "${str^^}" /dev/${dev}1
+    print_dtms "" "INFO: mounting /dev/${dev}1 on ${dst}, wait..."\\n
+    devflush 1 ; waitdev 1
+    mount -o async,noatime /dev/${dev}1 ${dst}
+    mount | grep -qw /dev/${dev}1 || errexit
+
+fi # ---------------------------------------------------------------------------
+
