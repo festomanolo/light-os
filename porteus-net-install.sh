@@ -364,3 +364,41 @@ if ! isocheck $isof $chk; then
     fi
 fi
 
+################################################################################
+
+if agree "Do you want to download the suggested modules"; then
+    script=$(search $modules_script_name ||:)
+    if [ -r $script ]; then
+        bash $script
+    else
+        perr "WARNING: script '$modules_script_name' not found, skipping!"
+    fi
+else
+    echo
+fi
+
+# Say goodbye and hand over, eventually
+let tms=($(date +%s%N)-$tms+500000000)/1000000000
+echo "INFO: Preparation completed in $tms seconds"
+
+uis=${usbinst_script_name}
+dsd=${store_dirn}
+echo
+echo "->  Directory '$dsd' populated: $(du -ms . | tr -cd [0-9]) MB"
+if is_on_demand; then
+    perr "###############################################"
+    perr " Now you can insert the USB stick to be writen "
+    perr "###############################################"
+    if besure; then
+        bash $uis --user-menu
+    else
+        bash $uis --help
+    fi
+elif [ -r "$uis" -a -n "$bdev" ]; then
+    bash $uis $iso $bdev $lang
+else
+    echo
+fi
+
+fi #############################################################################
+
