@@ -174,3 +174,115 @@ elif [ "$download_path" == "$workingd_path" ]; then # Avoid to over-write myself
     exec bash "$d/$shs" "$@"   # exec replaces this process, no return from here
     perr "ERROR: exec fails or a bug hits here, abort!"; errexit -1 # eventually
 else ###########################################################################
+
+function missing() {
+    perr "ERROR: file '${1:-}' is missing, abort!"
+    errexit
+}
+
+function besure() {
+    local ans
+    echo; read -p "${1:-Are you sure to continue}? [N/y] " ans
+    ans=${ans^^}; test "${ans:0:1}" == "Y" || return 1
+}
+
+function agree() {
+    local ans
+    echo; read -p "${1:-Are you sure to continue}? [Y/n] " ans
+    ans=${ans^^}; test "${ans:0:1}" != "N" || return 1
+}
+
+function waitdev() {
+    partprobe
+    for i in $(seq 1 100); do
+        egrep " $1$" /proc/partitions && return 0
+        sleep 0.1
+    done
+    perr "ERROR: waitdev('$1') failed, abort!"
+    errexit
+}
+
+function mke4fs() {
+    local lbl=$1 dev=$2; shift 2
+    mkfs.ext4 -L $lbl -E lazy_itable_init=1,lazy_journal_init=1 -F $dev "$@"
+}
+
+function download() {
+    local opt
+    if [ "x$1" == "x-c" ]; then
+        opt="-c"; shift
+    fi
+    local f url=$1; shift
+ 
+    for f in "$@"; do
+        if [ ! -n "$opt" ]; then search "$f" >/dev/null && continue; fi
+        echo
+        echo "Downloading file: $f"
+        agree "${sure_string}" || return 0 # user decided, and it is fine
+        if ! wget -q --show-progress $opt $url/$f; then
+            perr "ERROR: downloading '$f', abort!"
+            errexit
+        fi
+    done
+}
+
+function isocheck() {
+    printf "\nChecking '$1' sha256sum ... "
+    if sha256sum $1 2>/dev/null | grep -qw "$2"; then
+        printf "OK\n"
+    else
+        printf "KO\n"
+        return 1
+    fi
+}
+
+function wget_last_tag() {
+    wget -qO - "$1/tags" | sed -ne "s,.*/refs/tags/\(.*\)\.zip.*,\\1,p"|\
+        sort -rn | head -n1 | grep .
+}
+
+################################################################################
+
+trap "echo; echo; exit 1" INT
+
+mkdir -p "$download_path"
+pushd "$download_path" >/dev/null
+perr "-> pwd: $PWD"
+
+# Deciding which version download from the repo
+
+str="script suggests '$tagver' as last tagged, check for updates"
+if isdevel; then
+   tagver="main"
+   reftyp="heads"
+   perr "-> tag: $tagver (DEVEL: $DEVEL)"
+elif agree "WARNING: $str"; then
+    tagnew=$(wget_last_tag $repo)
+    if [ -n "$tagnew" ]; then
+        tagver=$tagnew
+        perr "-> tag: $tagver"
+    else
+        perr "WARNING: updates check failed, going with '$tagver' as default"
+    fi
+fi
+
+# Script package to download and script names to execute
+
+zpkg="$tagver.tar.gz"
+zpkg_url="$repo/archive/refs/$reftyp"
+rawc_url="$rawu/refs/$reftyp/$tagver"
+
+download ${zpkg_url} $zpkg
+zpkg=$(search $zpkg ||:)
+if [ -r "$zpkg" ]; then
+    if [ "${DEBUG:-0}" != "0" ]; then
+        printf \\n"Archive '$zpkg' extraction"\\n\\n
+        { tar xvzf $zpkg -C . --strip-components=1 || errexit; }|\
+            sed -e "s,^light-os-[0-9.]*/,    ,"
+    else
+        printf \\n"Archive '$zpkg' extraction ... "
+        tar xzf $zpkg -C . --strip-components=1 || errexit
+        echo "done."
+    fi
+fi
+
