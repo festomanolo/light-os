@@ -38,6 +38,7 @@ make_ext4fs_lazyone="-E lazy_itable_init=1,lazy_journal_init=1"
 make_ext4fs_notlazy="-E lazy_itable_init=0,lazy_journal_init=0"
 
 porteus=${VARIANT:-porteus}
+boot_timeout=${BOOT_TIMEOUT:-5}
 porteus_config_path="/boot/syslinux/${porteus}.cfg"
 background_filename="moonwalker-background.jpg"
 bootscreen_filename="moonwalker-bootscreen.png"
@@ -503,12 +504,12 @@ waitdev 1; rm -f $f
 # Write EXT4 partition #________________________________________________________
 
 if is_ext4_install; then # --------------------------------------------- EXT4 --
-    dofdisk "d_n_p_1_ _+16M_y_t_7_a_n_p_2_ _+1880M_" /dev/${dev}
+    dofdisk "d_n_p_1_ _+16M_y_t_${PART1_TYPE:-ef}_a_n_p_2_ _+1880M_" /dev/${dev}
     devflush; waitdev 2
     smart_make_ext4 "${porteus}" /dev/${dev}2
     usb_type="EXT4/INST"
 else # ----------------------------------------------------------------- VFAT --
-    dofdisk "d_n_p_1_ _+1200M_y_t_7_a_n_p_2_ _+700M_" /dev/${dev}
+    dofdisk "d_n_p_1_ _+1200M_y_t_${PART1_TYPE:-c}_a_n_p_2_ _+700M_" /dev/${dev}
     devflush; waitdev 2
     smart_make_ext4 "usrdata" /dev/${dev}2
     usb_type="VFAT/LIVE"
@@ -576,8 +577,9 @@ function porteus_configure() {
             { grep . && echo; } | tabout
     elif [ -r ${dst}/${cfg} ]; then
         str=" ${kargs}"; is_ext4_install || str="/${sve} ${kargs}"
-        sed -e "s,APPEND changes=[^/]*/${porteus}$,&${str}," -i ${dst}/${cfg}
-        grep -n "APPEND changes=[^/]*/${porteus}${str}" ${dst}/${cfg} | tabout
+        sed -e "s,^\([[:space:]]*[Tt][Ii][Mm][Ee][Oo][Uu][Tt][[:space:]]\{1\,\}\)[0-9]\{1\,\},\1${boot_timeout}," \
+            -e "s,APPEND changes=[^/]*/${porteus}$,&${str}," -i ${dst}/${cfg}
+        grep -n -e "TIMEOUT" -e "APPEND changes=[^/]*/${porteus}${str}" ${dst}/${cfg} | tabout
     else
         return 1
     fi
@@ -658,6 +660,7 @@ s=$(search rootcopy ||:); if [ -n "$s" ]; then
     s=$g/.config/dconf/${porteus}
     test -r $s.gz && zcat $s.gz > $s
     chown -R ${guest_owner} $g/ 2>/dev/null ||:
+    chmod a+rx $d/rootcopy/usr/local/bin/*.sh 2>/dev/null ||:
 fi
 
 echo; test "$yet2cfg" == "yes" && porteus_configure

@@ -34,6 +34,7 @@ make_ext4_nojournal="-O ^has_journal"
 make_ext4fs_options="-DO fast_commit"
 make_ext4fs_lazyone="-E lazy_itable_init=1,lazy_journal_init=1"
 make_ext4fs_notlazy="-E lazy_itable_init=0,lazy_journal_init=0"
+boot_timeout=${BOOT_TIMEOUT:-5}
 porteus_config_path="/boot/syslinux/porteus.cfg"
 background_filename="moonwalker-background.jpg"
 bootscreen_filename="moonwalker-bootscreen.png"
@@ -462,7 +463,7 @@ echo
 
 if is_ext4_install; then # --------------------------------------------- EXT4 --
     str="EFIBOOT"
-    update_partition_table "d_n_p_1_ _+16M_y_t_7_a_n_p_2_ _+1880M_"
+    update_partition_table "d_n_p_1_ _+16M_y_t_${PART1_TYPE:-ef}_a_n_p_2_ _+1880M_"
     declare -i nb=$(get_diskpart_size 1)
     printf "\\nINFO: creating a tmpfs image (szb:$nb) to init VFAT partition ... "
     if ! timereal "dd if=/dev/zero count=$nb of=${dst}/vfat.img status=none;
@@ -473,7 +474,7 @@ if is_ext4_install; then # --------------------------------------------- EXT4 --
     waitdev ${dev}1; waitdev ${dev}2
 else # ----------------------------------------------------------------- VFAT --
     str="porteus"
-    update_partition_table "d_n_p_1_ _+1200M_y_t_7_a_n_p_2_ _+700M_"
+    update_partition_table "d_n_p_1_ _+1200M_y_t_${PART1_TYPE:-c}_a_n_p_2_ _+700M_"
     waitdev ${dev}1
     printf "\\nINFO: writing creating VFAT $str filesystem ... "
     timereal mkfs.vfat -a -F32 -n "PORTEUS" /dev/${dev}1
@@ -510,8 +511,9 @@ function copy_boot_files_to_dst() {
     timereal cpvfatext4 -arf ${src}/boot ${src}/EFI ${dst}
     test -r ${dst}/${cfg} || missing ${dst}/${cfg}
     str=" ${kargs}"; is_ext4_install || str="/${sve} ${kargs}"
-    sed -e "s,APPEND changes=/porteus$,&${str}," -i ${dst}/${cfg}
-    echo; grep -n "APPEND changes=/porteus${str}" ${dst}/${cfg}
+    sed -e "s,^\([[:space:]]*[Tt][Ii][Mm][Ee][Oo][Uu][Tt][[:space:]]\{1\,\}\)[0-9]\{1\,\},\1${boot_timeout}," \
+        -e "s,APPEND changes=/porteus$,&${str}," -i ${dst}/${cfg}
+    echo; grep -n -e "TIMEOUT" -e "APPEND changes=/porteus${str}" ${dst}/${cfg}
     if test -n "${bsi}" && cp -f ${bsi} ${dst}/boot/syslinux/porteus.png; then
         printf \\n"INFO: custom boot screen background '${bsi}' copied"\\n
     fi

@@ -1,0 +1,4 @@
+# Light OS: Automatically reboot back to the host OS when the boot USB is unplugged
+ACTION=="remove", SUBSYSTEM=="block", ENV{ID_FS_LABEL}=="PORTEUS|PORTEUX|EFIBOOT|porteus|porteux|usrdata", RUN+="/usr/local/bin/lightos-usb-unplug.sh %E{ID_FS_LABEL} %k"
+ACTION=="remove", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="disk", RUN+="/usr/local/bin/lightos-usb-unplug.sh %E{ID_FS_LABEL} %k"
+ACTION=="remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/local/bin/lightos-usb-unplug.sh usb_device %k"
