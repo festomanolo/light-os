@@ -201,3 +201,126 @@ function umount_all() {
 }
 
 ################################################################################
+
+trap 'printf "\n\n"; exit 1' INT
+
+declare -i extfs=0 usrmn=0
+
+if is_menu_mode; then
+    usrmn=1; set --
+else
+    iso=${1:-}
+fi
+dev=${2:-}
+if [ "x$3" == "x--ext4-install" ]; then
+    extfs=4
+    shift
+fi
+kmp=${3:-}
+extfs=${4:+4}
+if ! is_real_porteus; then
+    extfs=4
+fi
+
+str=$(search "$kernelargs_filename" ||:)
+kargs=${str:+$(cat "$str" 2>/dev/null ||:)}
+
+sve=$persistnce_filename
+bgi=$background_filename
+bsi=$bootscreen_filename
+cfg=$porteus_config_path
+mbr=$usbsk_init_filename
+
+if ! is_menu_mode; then
+    test -b "/dev/$dev" || dev=$(basename "$dev")
+    test -b "/dev/$dev" || missing "${dev:+/dev/}${dev:-block_device}"
+    test -r "$iso" || iso="$wdr/$iso"
+    test -r "$iso" || missing "$iso"
+fi
+
+test -r "$bsi" || bsi="$wdr/$bsi"
+test -f "$bsi" || bsi=""
+
+test -r "$bgi" || bgi="$wdr/$bgi"
+test -f "$bgi" || bgi=""
+
+test -r "$mbr" || mbr="$wdr/$mbr"
+test -r "$mbr" || missing "$mbr"
+
+if ! amiroot; then
+    printf \\n"WARNING: script '$shs' ${dev:+for '/dev/$dev' }requires root priviledges (devel:${DEVEL:-0}) (menu:$usrmn)."\\n
+    # RAF: this could be annoying for DEVs but is an extra safety USR checkpoint
+    isdevel || { amiroot || sudo -k; }
+    is_menu_mode && set -- "--user-menu"
+    exec sudo -E bash $0 "$@" # exec replaces this process, no return from here
+    perr \\n"ERROR: exec fails or a bug hits here, abort!"\\n
+    errexit -1
+fi
+
+str="/proc/sys/kernel/sysrq"
+if test -e $str && echo s >$str; then
+    :
+else
+    nice -19 sync & # RAF: a wait expects to join with this process in background
+    sync_pid=$!
+fi 2>/dev/null
+
+str=${usrmn/1/user menu mode active}
+str=${str/0/(none)}
+tfs=${extfs/0/(live)}
+tfs=${tfs/4/(inst)}
+
+echo "
+Executing shell script from: $wdr
+       current working path: $PWD
+           script file name: $shs
+              with oprtions: ${@:-$str}
+              kern. cmdline: ${kargs:-(none)}
+                    by user: ${SUDO_USER:+$SUDO_USER as }${USER}
+                    variant: ${porteus} ${tfs}
+                      devel: ${DEVEL:-unset}"
+
+if is_menu_mode; then
+    # RAF: selecting the device by insertion is the most user-friendly way to go
+    while true; do
+        find_last_attached_scsi_unit
+        test -b /dev/$scsi_dev && break
+        echo
+        read -p "Waiting for the USB stick insertion, press ENTER to continue";
+        sleep 1
+    done
+    echo
+    echo "$scsi_str"
+    agree "This above is the last unit attached, select it" || usage errexit
+    dev=$scsi_dev
+
+    # RAF: auto-selection for ISO, priority: 1. folder; 2. newest
+    for d in . "${store_dirn}" "$wdr"; do
+        iso=$(command ls -1t "$d"/*.iso "$d"/*.ISO 2>/dev/null ||:)
+        test -n "$iso" && break
+    done
+    # RAF, TODO: if many ISO found, let the user choose among them
+    iso=$(echo "$iso" | head -n1)
+    test -r "$iso" || missing "ISO:${iso:- not found}"
+    agree "Is this '$iso' the ISO file you want use" || usage errexit
+
+    while is_real_porteus; do
+        if agree "Do you want an EXT4 installation"; then
+            extfs=4; break
+        elif agree "Do you want a LIVE for sporadic use" ; then
+            extfs=0; break
+        fi
+    done
+
+    echo; read -p \
+"Please provide the 2-letter keyboard language,
+or press ENTER for leave the current settings: " kmp
+fi
+
+# Deciding about keyboard layout
+test -n "$kmp" && kargs="kmap=$kmp ${kargs}"
+
+# Deciding about output redirection
+redir="/dev/null"; isdevel && redir="/dev/stdout"
+
+################################################################################
