@@ -57,3 +57,14 @@ mkdir -p "$ISOROOT"
 cleanup() {
     if [ -n "${MNT_DIR:-}" ]; then
         if [ "$(uname -s)" = "Darwin" ]; then
+            hdiutil detach "$MNT_DIR" >/dev/null 2>&1 || :
+        else
+            umount "$MNT_DIR" >/dev/null 2>&1 || :
+        fi
+    fi
+    rm -rf "$WORKDIR"
+}
+trap cleanup EXIT
+
+# 1. Extract input ISO contents
+echo "[Light OS] Extracting base ISO contents..."
