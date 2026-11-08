@@ -286,3 +286,81 @@ if [ -r "$zpkg" ]; then
     fi
 fi
 
+################################################################################
+
+trap "echo; echo; exit 1" INT
+
+if echo "$1" | grep -qe "^/dev/"; then
+    if [ -b "$1" ]; then
+        set -- "" "" "" "" "$@"
+    else
+        perr "ERROR: block device '$1' is not valid, abort!"
+        errexit
+    fi
+fi
+
+# RAF: while true w/break avoid nesting too much and avoid the use of exit
+#      avoiding explicit exit, is a good idea when `source` a `set -e` .sh.
+while true; do
+    test -n "$2" -o -r $mirror_file && break
+    perr "WARNING: no any mirror selected, using '$mirror_dflt'"
+    agree "Do you want to check for the fastest mirror available" || break
+    fname=${mirrors_script_name}
+    script=$(search $fname ||:)
+    if [ ! -r "$script" ]; then
+        perr "WARNING: the script '$fname' is missng"
+        sure_string="Do you want to download it from github" \
+            download ${rawc_url} $fname
+        script=$(search $fname || missing $fname)
+    fi
+    bash $script && echo "done."
+    break
+done
+
+type=${1^^}
+type=${type:-$porteus_type}
+uweb=${2:-$(cat $mirror_file 2>/dev/null ||:)}
+uweb=${uweb:-$mirror_dflt}
+arch=${3:-$porteus_arch}
+vers=${4:-$porteus_version}
+bdev=$5
+lang=$6
+
+url=$(echo "$uweb/$arch/$vers" | sed -e "s,http:,https:,")
+
+################################################################################
+
+declare -i tms=$(date +%s%N)
+
+download $url $sha256_file
+shf=$(search $sha256_file)
+test -n "$shf" || missing $sha256_file
+chk=$(grep -ie "porteus.*-${type}-.*.iso" $shf | cut -d' ' -f1)
+iso=$(grep -ie "porteus.*-${type}-.*.iso" $shf | tr -s ' ' | cut -d' ' -f2)
+
+if ! test -n "$iso" -a -n "$chk" ; then
+    perr "ERROR: no ISO name or its checksum found, abort!"
+    echo "Catalog filename: $sha256_file"
+    echo "---------------- content start -----------------"
+    cat $shf
+    echo "----------------- content end ------------------"
+    echo "ISO name: $iso"
+    errexit
+fi
+perr "INFO: for ISO file '$iso' expecting sha256 is:
+      $chk"            
+
+isof=$(search $iso || echo $iso)
+if [ ! -r "$isof" ]; then
+    download -c $url $iso
+fi
+if ! isocheck $isof $chk; then
+    download -c $url $iso
+    isof=$(search $iso)
+    if ! isocheck  $isof $chk; then
+        mv -f "$isof" "$iso.broken-sha.$RANDOM" # RAF: mktemp here
+        perr "WARNING: file '$isof' moved in $(command ls -1t $iso.broken-sha.* | head -n1)"
+        errexit
+    fi
+fi
+
