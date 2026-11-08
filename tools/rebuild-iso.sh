@@ -68,3 +68,15 @@ trap cleanup EXIT
 
 # 1. Extract input ISO contents
 echo "[Light OS] Extracting base ISO contents..."
+if [ "$(uname -s)" = "Darwin" ]; then
+    MNT_DIR="$(hdiutil attach -readonly -nobrowse "$INPUT_ISO" | awk -F'\t' 'END{print $3}')"
+    cp -a "$MNT_DIR"/. "$ISOROOT"/
+    hdiutil detach "$MNT_DIR" >/dev/null
+    MNT_DIR=""
+else
+    if command -v xorriso >/dev/null 2>&1; then
+        xorriso -osirrox on -indev "$INPUT_ISO" -extract / "$ISOROOT" >/dev/null 2>&1
+    else
+        MNT_DIR="$WORKDIR/mnt"
+        mkdir -p "$MNT_DIR"
+        mount -o loop,ro "$INPUT_ISO" "$MNT_DIR"
