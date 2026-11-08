@@ -102,3 +102,75 @@ rawu="https://raw.githubusercontent.com/$user/$proj"
 tagver="v0.3.6"
 reftyp="tags"
 
+################################################################################
+if asking_help; then usage errexit 0; elif false; then errexit
+#///////////////////////////////////////////////////////////////////////////////
+
+echo '#!/bin/bash
+stat=$(head -c35 /proc/$PPID/stat)
+pcmd=$(echo $(strings /proc/$PPID/cmdline))
+echo 0:$0:$$ ppid:$PPID pcmd:$pcmd stat:$stat
+' | tee test.sh | grep -v .; chmod a+x test.sh
+
+cmd=$(echo $(strings /proc/$$/cmdline))
+echo me cmd:$$:$cmd; bash -i <(cat test.sh)
+
+# RAF: output from the code above to make properly work the code below
+# me cmd:2170724:bash /dev/fd/63
+# 0:/dev/fd/62:2170760 ppid:2170724 pcmd:bash /dev/fd/63
+#                      stat:2170724 (bash) S 1786462 2170724 17
+
+tagver="v0.3." # To replace with the lastest available in tags
+rawurl="https://raw.githubusercontent.com/festonolo"
+rawurl="$rawurl/light-os/refs/tags/$tagver"
+rawurl="$rawurl/porteus-net-install.sh"
+DEVEL=0 # bash -i <(wget -qO- $net_inst_url)
+
+#\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+elif [ "x$1" == "x--clean" ]; then #############################################
+    if amiroot; then
+        if [ ! -n "${SUDO_USER}" ]; then
+            perr "ERROR: try as user, variable \$SUDO_USER is void/unset, abort!"
+            errexit
+        fi
+        perr "WARNING: please execute this script as user, not as root"
+        chown -R ${SUDO_USER}.${SUDO_USER} $d
+        errexit
+    fi
+    d=$download_path
+    if [ ! -d "$d" ]; then
+        perr "ERROR: folder '$d' does not exit, abort!"
+        errexit
+    fi
+    if [ "$(realpath $PWD)" == "$(realpath $d)" ]; then
+        perr "WARNING: deleting current directory, prompt 'cd .' or 'cd ..' afterwards"
+    fi
+    set +x
+    while true; do
+        # RAF: better use mktemp here
+        rd="$d.$RANDOM"
+        if [ ! -d $rd ]; then mkdir $rd && break; fi
+        sleep 0.1
+    done
+    # RAF: this piece of code should be isolated, it can delete itself.
+    (
+        isolist=$(command ls -1t $d/*.{ISO,iso,xzm} 2>/dev/null ||:)       
+        if [ -n "$isolist" ]; then
+            mv -f $isolist $rd && rm -rf $d && mv $rd $d
+            perr "INFO: the ISO and .xzm files are left untouched, do it manually"
+        else
+            rm -rf $d && mv $rd $d
+            perr "done."
+        fi
+        errexit 0
+    )
+elif [ "x$1" == "x-h" -o "x$1" == "x--help" ]; then # RAF: isn't a kind of magic!?
+    usage echo
+elif amiroot; then
+    perr "This script is NOT supposed being executed by root, abort!"
+    errexit
+elif [ "$download_path" == "$workingd_path" ]; then # Avoid to over-write myself
+    d="$download_path/tmp"; mkdir -p "$d"; cp -f "$0" "$d/$shs"
+    exec bash "$d/$shs" "$@"   # exec replaces this process, no return from here
+    perr "ERROR: exec fails or a bug hits here, abort!"; errexit -1 # eventually
+else ###########################################################################
