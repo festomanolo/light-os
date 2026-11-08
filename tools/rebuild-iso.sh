@@ -127,3 +127,15 @@ if [ -f "$CFG_FILE" ]; then
     sed -e "s,^\([[:space:]]*[Tt][Ii][Mm][Ee][Oo][Uu][Tt][[:space:]]\{1\,\}\)[0-9]\{1\,\},\1${BOOT_TIMEOUT}," \
         -e "s,APPEND changes=[^/]*/porteus$,& ${KARGS}," \
         "$CFG_FILE" > "$CFG_FILE.tmp"
+    mv -f "$CFG_FILE.tmp" "$CFG_FILE"
+    grep -n -e "TIMEOUT" -e "APPEND changes=" "$CFG_FILE" | sed 's/^/  /'
+fi
+
+# 6. Build bootable hybrid ISO (using local mkisofs/xorriso or Docker fallback on macOS)
+echo "[Light OS] Building bootable ISO: $OUTPUT_ISO ..."
+if command -v xorriso >/dev/null 2>&1; then
+    xorriso -as mkisofs \
+        -o "$OUTPUT_ISO" \
+        -v -l -J -joliet-long -R -D \
+        -A "$CDLABEL" -V "$CDLABEL" \
+        -no-emul-boot -boot-info-table -boot-load-size 4 \
