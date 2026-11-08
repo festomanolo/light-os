@@ -116,3 +116,14 @@ for xzm in "$REPO_DIR"/*.xzm "$REPO_DIR"/moonwalker/*.xzm; do
 done
 
 # 5. Update syslinux/porteus.cfg with TIMEOUT 5 and cmdline.txt (copy2ram, etc.)
+CFG_FILE="$ISOROOT/boot/syslinux/porteus.cfg"
+KARGS=""
+if [ -r "$REPO_DIR/cmdline.txt" ]; then
+    KARGS="$(tr '\n' ' ' < "$REPO_DIR/cmdline.txt" | sed 's/[[:space:]]*$//')"
+fi
+
+if [ -f "$CFG_FILE" ]; then
+    echo "[Light OS] Updating bootloader config (TIMEOUT $BOOT_TIMEOUT, kernel args: $KARGS)..."
+    sed -e "s,^\([[:space:]]*[Tt][Ii][Mm][Ee][Oo][Uu][Tt][[:space:]]\{1\,\}\)[0-9]\{1\,\},\1${BOOT_TIMEOUT}," \
+        -e "s,APPEND changes=[^/]*/porteus$,& ${KARGS}," \
+        "$CFG_FILE" > "$CFG_FILE.tmp"
