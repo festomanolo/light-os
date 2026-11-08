@@ -151,3 +151,15 @@ elif command -v mkisofs >/dev/null 2>&1 || command -v genisoimage >/dev/null 2>&
         -b boot/syslinux/isolinux.bin \
         -c boot/syslinux/isolinux.boot \
         "$ISOROOT"
+elif command -v docker >/dev/null 2>&1; then
+    echo "[Light OS] Using Docker (debian:bookworm-slim + xorriso) to build bootable El Torito ISO..."
+    OUT_FILE="$(basename "$OUTPUT_ISO")"
+    docker run --rm \
+        -v "$WORKDIR:/work" \
+        debian:bookworm-slim \
+        sh -c "apt-get update -qq && apt-get install -y -qq xorriso syslinux-utils >/dev/null && \
+               xorriso -as mkisofs \
+                 -o '/work/$OUT_FILE' \
+                 -l -J -joliet-long -R -D \
+                 -A '$CDLABEL' -V '$CDLABEL' \
+                 -no-emul-boot -boot-info-table -boot-load-size 4 \
