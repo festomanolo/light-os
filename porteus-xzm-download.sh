@@ -84,3 +84,53 @@ s=$bundles_dir.${sha256_file/.txt/}
 m=$(cat $mirror_file 2>/dev/null ||:)
 m=${m:-$mirror_dflt}
 
+# RAF: internal check & set and early functions #_______________________________
+
+printf \\n"INFO: active mirror '$m'"\\n
+
+u1=$m/${porteus_arch}/${porteus_version}/${bundles_dir}
+u2=$m/${porteus_arch}/${backup_version}/${bundles_dir}
+
+while true; do #################################################################
+
+if [ "$(basename $PWD)" != "$store_dirn" ]; then
+    test -d $store_dirn && cd $store_dirn
+    chd=1
+fi
+
+printf \\n"INFO: downloading the $sha256_file ... "
+for u in "$u1" "$u2" ""; do
+    test -n "$u" || break
+    wget -qO- $u/$sha256_file > $s && break
+done; echo "done."
+
+if [ ! -n "$u" ]; then
+    perr "ERROR: the '$bundles_dir' not found, abort!"
+    break
+fi
+
+printf \\n"INFO: downloading app modules, wait ..."\\n\\n
+for i in "man-lite" "netsurf" "remmina"; do
+    f=$(grep $i $s | tr -s ' ' | cut -d ' ' -f2 | sort -n | tail -n1)
+    test -r $f || wget $v -c $u/$f
+    if ! sha256sum -c $s 2>&1 | grep -e ": OK$" | grep $i;
+    then rm -f $i; errexit; fi; echo
+done
+
+function xzmwget_and_shachk() {
+    local u=$1 f=$2 i; shift 2
+    i=$f.xzm; test -r $i || wget $@ -c $u -O $i
+    if ! sha256sum -c xzm/$f.sha 2>&1 | grep -e ": [OK][OK]$" \
+       | grep $i; then rm -f $i; errexit; fi
+}
+
+f=$trsn_filename; u="xzm/$f.gld"; if [ -r $u ]; then u=$(cat $u)
+    printf "INFO: downloading transitional module, wait ..."\\n\\n
+    xzmwget_and_shachk $u $f $v
+fi
+
+echo
+test "$chd" == "1" && cd - >/dev/null
+
+break; done ####################################################################
+
