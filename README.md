@@ -36,6 +36,8 @@ The v0.2.0 has been reported that it works also for [PorteuX](https://github.com
 
 Build the ISO with `bash tools/rebuild-iso.sh [input.iso] [output.iso]`.
 
+**Write it to a USB stick.** The ISO is hybrid: written block for block to a stick it boots on both legacy BIOS and UEFI PCs (tested in QEMU with SeaBIOS and EDK2/OVMF). On a Mac use [Ndaga Fijo](https://festomanolo.com/ndaga-fijo/) in direct-image mode; on Windows Rufus in DD mode; on Linux `dd if=LightOS-v1.0-x86_64.iso of=/dev/sdX bs=4M conv=fsync`. A stick written this way is read-only, so the session is never saved: unplug it and everything is gone. Secure Boot must be off, because the Syslinux EFI loader is not signed.
+
 ---
 
 ### Persistence vs Installation
