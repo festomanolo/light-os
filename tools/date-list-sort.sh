@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # (C) 2025, Roberto A. Foglietta <roberto.foglietta@gmail.com> - 3-clause BSD
+# (C) 2026, festomanolo - Light OS rebranding, parallel boot and unplug features
 #
 ################################################################################
 set +o noclobber

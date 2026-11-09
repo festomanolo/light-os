@@ -11,9 +11,9 @@ wdr=$(dirname "$0")
 shs=$(basename "$0")
 dir=$PWD
 
-mir="porteus-mirror-selection.sh"
-net="porteus-net-install.sh"
-store_dirn="moonwalker"
+mir="lightos-mirror-selection.sh"
+net="lightos-net-install.sh"
+store_dirn="lightos"
 
 echo
 echo "launch dir: $dir"

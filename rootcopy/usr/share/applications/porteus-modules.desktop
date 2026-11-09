@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Light OS Modules
+Name[ru]=Модули Light OS
+Exec=psu /usr/bin/lsmodules
+Icon=cdr
+Type=Application
+Categories=Application;System;Settings;

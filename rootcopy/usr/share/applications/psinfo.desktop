@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Light OS System Info
+Name[ru]=Системная информация Light OS
+Exec=/opt/porteus-scripts/xpsinfo
+Icon=dialog-information-symbolic
+Terminal=false
+Type=Application
+Categories=Application;System;
+

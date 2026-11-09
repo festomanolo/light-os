@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Light OS Settings Centre
+Name[ru]=Центр настроек Light OS
+Exec=porteus-settings-centre
+Icon=computer
+Type=Application
+Categories=Application;System;

@@ -1,56 +1,47 @@
 #!/bin/sh
 #
-# Light OS: Triggered by udev when a USB block device is unplugged.
-# If the Light OS boot USB is no longer attached, cleanly unmount stale
-# mountpoints and immediately reboot the machine back into its normal OS.
+# Light OS (festomanolo): called by udev when a block device is removed.
+# If the removed device is the Light OS boot stick, reset the machine at once
+# so the PC comes back up in its normal OS. RAM is lost on reset, so nothing
+# of the live session is left behind.
 #
+# Only shell builtins are used after the decision: the boot stick may hold the
+# very binaries (sync, reboot, ...) that we would otherwise try to execute.
+#
+# Args: $1 = filesystem label (may be empty)   $2 = kernel name (sdb1, sdb ...)
+# Opt out with the "nounplug" cheatcode. Tests: LIGHTOS_DRYRUN=1, LIGHTOS_RUN=dir
 ################################################################################
 
-LABEL="${1:-}"
-DEVNAME="${2:-}"
-LOCKDIR="/tmp/lightos-usb-unplug.lock"
+label="${1:-}"
+kname="${2:-}"
+run="${LIGHTOS_RUN:-/run}"
 
-boot_usb_present() {
-    for lbl in PORTEUS PORTEUX EFIBOOT porteus porteux usrdata; do
-        if [ -e "/dev/disk/by-label/$lbl" ]; then
-            return 0
-        fi
-    done
-    if command -v blkid >/dev/null 2>&1; then
-        if blkid | grep -Eq 'LABEL="(PORTEUS|PORTEUX|EFIBOOT|porteus|porteux|usrdata)"'; then
-            return 0
-        fi
-    fi
-    return 1
-}
+read -r cmdline < /proc/cmdline 2>/dev/null
+case " $cmdline " in *" nounplug "*) exit 0 ;; esac
 
-case "$LABEL" in
-    PORTEUS|PORTEUX|EFIBOOT|porteus|porteux|usrdata)
-        TRIGGER=1
-        ;;
-    *)
-        # Give udev 300ms to finish removing /dev/disk/by-label symlinks
-        sleep 0.3 2>/dev/null || sleep 1
-        if boot_usb_present; then
-            exit 0
-        fi
-        TRIGGER=1
-        ;;
+# whole-disk name of the removed node: sdb1 -> sdb, nvme0n1p1 -> nvme0n1
+disk="$kname"
+case "$kname" in
+    nvme*p[0-9]*|mmcblk*p[0-9]*) disk="${kname%p[0-9]*}" ;;
+    sd[a-z]*[0-9]|vd[a-z]*[0-9]|hd[a-z]*[0-9]) disk="${kname%%[0-9]*}" ;;
 esac
 
-if [ "${TRIGGER:-0}" = "1" ]; then
-    mkdir "$LOCKDIR" 2>/dev/null || exit 0
-
-    # Flush pending writes (bounded so removed media cannot hang sync)
-    sync &
-    sleep 0.5 2>/dev/null || sleep 1
-
-    # Lazy-unmount any USB partitions to prevent shutdown hang
-    umount -l /mnt/live/memory/changes 2>/dev/null || :
-    umount -l /mnt/sd* 2>/dev/null || :
-
-    # Reboot immediately back into the normal internal OS
-    /sbin/reboot -f 2>/dev/null || reboot -f 2>/dev/null || :
-    echo 1 > /proc/sys/kernel/sysrq 2>/dev/null || :
-    echo b > /proc/sysrq-trigger 2>/dev/null || :
+# If the boot watcher recorded the boot disk(s), only those count.
+# Without a record (watcher not running) fall back to the label match.
+if [ -r "$run/lightos-bootdisk" ]; then
+    hit=0
+    while read -r d; do
+        [ "$d" = "$disk" ] && hit=1
+    done < "$run/lightos-bootdisk"
+    [ "$hit" = 1 ] || exit 0
+else
+    case "$label" in
+        PORTEUS|PORTEUX|EFIBOOT|porteus|porteux|usrdata) ;;
+        *) exit 0 ;;
+    esac
 fi
+
+if [ -n "${LIGHTOS_DRYRUN:-}" ]; then echo "REBOOT disk=$disk"; exit 0; fi
+
+echo 1 > /proc/sys/kernel/sysrq
+echo b > /proc/sysrq-trigger

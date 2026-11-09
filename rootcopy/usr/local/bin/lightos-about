@@ -1,0 +1,18 @@
+#!/bin/sh
+# Light OS: "About this system" dialog. Light OS is developed by festomanolo.
+. /etc/os-release 2>/dev/null
+TXT="$PRETTY_NAME
+
+Developed by festomanolo
+Kernel: $(uname -r)   Arch: $(uname -m)
+Memory: $(awk '/MemTotal/{printf "%d MB", $2/1024}' /proc/meminfo)
+
+Built on Porteus (Slackware). Runs from USB / RAM.
+Unplug the USB stick and the PC reboots into its normal OS."
+if command -v zenity >/dev/null 2>&1; then
+    exec zenity --info --no-markup --title="About Light OS" --icon-name=lightos --text="$TXT"
+elif command -v gxmessage >/dev/null 2>&1; then
+    exec gxmessage -center -title "About Light OS" "$TXT"
+else
+    exec xmessage -center "$TXT"
+fi

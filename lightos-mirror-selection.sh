@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # (C) 2025, Roberto A. Foglietta <roberto.foglietta@gmail.com> - 3-clause BSD
+# (C) 2026, festomanolo - Light OS rebranding, parallel boot and unplug features
 #
 ################################################################################
 set +o noclobber
@@ -10,7 +11,7 @@ set -e
 wdr=$(dirname "$0")
 shs=$(basename "$0")
 
-store_dirn="moonwalker"
+store_dirn="lightos"
 usage_strn="[--clean]"
 
 export DEVEL=${DEVEL:-0}
@@ -18,7 +19,7 @@ export DEVEL=${DEVEL:-0}
 # RAF: these values depend by external sources and [TODO] should be shared #____
 
 export sha256_file="sha256sums.txt"
-export mirror_file="porteus-mirror-selected.txt"
+export mirror_file="lightos-mirror-selected.txt"
 
 ## RAF: defined by `net-install` script
 export porteus_version=${porteus_version:-Porteus-v5.1} #current
@@ -34,8 +35,8 @@ dtst="kernel/64bit.config"
 ## dtst="bundles/man-lite-porteus-20220607-x86_64-alldesktops.xzm"
 ## RAF: until the sha256sum.txt files will be restored back, we are tring v5.1
 
-mirror_list="porteus-mirror-allhttps.txt"
-netlog_file="porteus-mirror-selected.log"
+mirror_list="lightos-mirror-allhttps.txt"
+netlog_file="lightos-mirror-selected.log"
 wgetlogtail="wget-log"
 
 # RAF: basic common functions #_________________________________________________

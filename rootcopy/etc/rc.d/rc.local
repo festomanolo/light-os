@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+# /etc/rc.d/rc.local - Light OS (festomanolo)
+# Late boot tasks. rc.M runs this file synchronously, so everything here is
+# detached into the background and nothing may wait: the desktop starts only
+# after this script returns.
+
+# Watch the boot stick: unplug => immediate reset => PC returns to its own OS
+( bash /usr/local/bin/lightos-boot-watch >/dev/null 2>&1 </dev/null & )
+
+# Re-read udev rules in case they were added after udevd started
+( udevadm control --reload >/dev/null 2>&1 & )
+
+exit 0

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=About Light OS
+Comment=Light OS by festomanolo
+Exec=/usr/local/bin/lightos-about
+Icon=lightos
+Terminal=false
+Categories=System;Settings;

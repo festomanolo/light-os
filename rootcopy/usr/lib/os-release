@@ -1,0 +1,11 @@
+NAME="Light OS"
+VERSION="1.0"
+ID=lightos
+ID_LIKE=slackware
+VERSION_ID=1.0
+PRETTY_NAME="Light OS 1.0 by festomanolo"
+ANSI_COLOR="0;31"
+LOGO=lightos
+VENDOR_NAME="festomanolo"
+HOME_URL="https://github.com/festonolo/light-os"
+BUG_REPORT_URL="https://github.com/festonolo/light-os/issues"

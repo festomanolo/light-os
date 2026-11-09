@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # (C) 2025, Roberto A. Foglietta <roberto.foglietta@gmail.com> - 3-clause BSD
+# (C) 2026, festomanolo - Light OS rebranding, parallel boot and unplug features
 #
 ################################################################################
 set +o noclobber
@@ -10,7 +11,7 @@ set -e
 wdr=$(dirname "$0")
 shs=$(basename "$0")
 
-store_dirn="moonwalker"
+store_dirn="lightos"
 usage_strn=""
 
 export DEVEL=${DEVEL:-0}
@@ -23,7 +24,7 @@ export porteus_version=${porteus_version:-Porteus-v5.1} #current
 
 ## RAF: defined by `mirror-selection` script
 export sha256_file=${sha256_file:-sha256sums.txt}
-export mirror_file=${mirror_file:-porteus-mirror-selected.txt}
+export mirror_file=${mirror_file:-lightos-mirror-selected.txt}
 export mirror_dflt=${mirror_dflt:-https://mirrors.dotsrc.org/porteus}
 
 # RAF: internal values #________________________________________________________
