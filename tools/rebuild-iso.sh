@@ -6,7 +6,7 @@
 #   - Light OS boot screen & desktop wallpapers (efiboot/ + rootcopy/)
 #   - Auto-reboot udev rule & handler when the USB is unplugged (rootcopy/)
 #   - Light OS initrd (initrd/initrd.xz): faster USB detection, internal disks not scanned
-#   - Hybrid BIOS + UEFI bootable ISO output (label: PORTEUS)
+#   - Hybrid ISO that boots BIOS and UEFI, from DVD or a raw-written USB stick
 #
 # Usage:
 #   bash tools/rebuild-iso.sh [/path/to/input.iso] [/path/to/output.iso]
@@ -147,50 +147,27 @@ if [ -f "$CFG_FILE" ]; then
     grep -n -e "TIMEOUT" -e "APPEND changes=" "$CFG_FILE" | sed 's/^/  /'
 fi
 
-# 6. Build bootable hybrid ISO (using local mkisofs/xorriso or Docker fallback on macOS)
-echo "[Light OS] Building bootable ISO: $OUTPUT_ISO ..."
-if command -v xorriso >/dev/null 2>&1; then
-    xorriso -as mkisofs \
-        -o "$OUTPUT_ISO" \
-        -v -l -J -joliet-long -R -D \
-        -A "$CDLABEL" -V "$CDLABEL" \
-        -no-emul-boot -boot-info-table -boot-load-size 4 \
-        -b boot/syslinux/isolinux.bin \
-        -c boot/syslinux/isolinux.boot \
-        "$ISOROOT"
-elif command -v mkisofs >/dev/null 2>&1 || command -v genisoimage >/dev/null 2>&1; then
-    MKISO="$(command -v mkisofs || command -v genisoimage)"
-    "$MKISO" -o "$OUTPUT_ISO" \
-        -v -l -J -joliet-long -R -D \
-        -A "$CDLABEL" -V "$CDLABEL" \
-        -no-emul-boot -boot-info-table -boot-load-size 4 \
-        -b boot/syslinux/isolinux.bin \
-        -c boot/syslinux/isolinux.boot \
-        "$ISOROOT"
+# 6. Build the hybrid BIOS + UEFI ISO (tools/mkiso-inner.sh), natively on
+#    Linux when the tools are installed, otherwise in a cached Docker image
+echo "[Light OS] Building bootable ISO (BIOS + UEFI): $OUTPUT_ISO ..."
+cp -f "$REPO_DIR/tools/mkiso-inner.sh" "$WORKDIR/mkiso-inner.sh"
+if [ "$(uname -s)" = "Linux" ] && command -v xorriso >/dev/null 2>&1 \
+   && command -v mkfs.vfat >/dev/null 2>&1 && command -v mcopy >/dev/null 2>&1; then
+    sh "$WORKDIR/mkiso-inner.sh" "$ISOROOT" "$OUTPUT_ISO" "$CDLABEL"
 elif command -v docker >/dev/null 2>&1; then
-    echo "[Light OS] Using Docker (xorriso) to build bootable El Torito ISO..."
     OUT_FILE="$(basename "$OUTPUT_ISO")"
-    BUILDER_IMG="lightos-isobuilder:1"
+    BUILDER_IMG="lightos-isobuilder:2"
     # Cache the toolchain in a local image so later builds skip apt entirely
     if ! docker image inspect "$BUILDER_IMG" >/dev/null 2>&1; then
-        printf 'FROM debian:bookworm-slim\nRUN apt-get update -qq && apt-get install -y -qq xorriso syslinux-utils >/dev/null && rm -rf /var/lib/apt/lists/*\n' \
+        echo "[Light OS] Creating builder image $BUILDER_IMG (one time)..."
+        printf 'FROM debian:bookworm-slim\nRUN apt-get update -qq && apt-get install -y -qq --no-install-recommends xorriso isolinux dosfstools mtools >/dev/null && rm -rf /var/lib/apt/lists/*\n' \
             | docker build -q -t "$BUILDER_IMG" - >/dev/null
     fi
-    docker run --rm \
-        -v "$WORKDIR:/work" \
-        "$BUILDER_IMG" \
-        sh -c "xorriso -as mkisofs \
-                 -o '/work/$OUT_FILE' \
-                 -l -J -joliet-long -R -D \
-                 -A '$CDLABEL' -V '$CDLABEL' \
-                 -no-emul-boot -boot-info-table -boot-load-size 4 \
-                 -b boot/syslinux/isolinux.bin \
-                 -c boot/syslinux/isolinux.boot \
-                 /work/isoroot && \
-               isohybrid '/work/$OUT_FILE' 2>/dev/null || true"
+    docker run --rm -v "$WORKDIR:/work" "$BUILDER_IMG" \
+        sh /work/mkiso-inner.sh /work/isoroot "/work/$OUT_FILE" "$CDLABEL"
     mv -f "$WORKDIR/$OUT_FILE" "$OUTPUT_ISO"
 else
-    echo "ERROR: Neither xorriso, mkisofs, nor docker found to pack the ISO." >&2
+    echo "ERROR: need Linux with xorriso, dosfstools and mtools, or docker, to pack the ISO." >&2
     exit 1
 fi
 
