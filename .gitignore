@@ -1,7 +1,10 @@
 downloads/
-porteus-mirror-selected.log
-porteus-mirror-selected.txt
+lightos-mirror-selected.log
+lightos-mirror-selected.txt
 changes.dat
 boot.iso
 tmp/
-moonwalker/
+lightos/
+*.iso
+__pycache__/
+*.pyc

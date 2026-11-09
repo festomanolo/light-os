@@ -1,0 +1,55 @@
+#!/bin/bash
+#
+# Light OS (festomanolo): boot-stick watchdog, started from rc.local.
+# Finds the USB disk Light OS booted from, records it in /run/lightos-bootdisk
+# and resets the machine the moment that disk disappears, so the PC returns to
+# its normal OS. Polls /sys with shell builtins only (no exec after startup),
+# so it keeps working after the stick has been pulled.
+#
+# Opt out with the "nounplug" cheatcode. Tests: LIGHTOS_SYS, LIGHTOS_RUN,
+# LIGHTOS_DRYRUN=1 (print instead of reset), LIGHTOS_DISKS="sdb" (skip blkid).
+################################################################################
+
+SYS="${LIGHTOS_SYS:-/sys}"
+RUN="${LIGHTOS_RUN:-/run}"
+read -r cmdline < /proc/cmdline 2>/dev/null
+case " $cmdline " in *" nounplug "*) exit 0 ;; esac
+
+disks=""
+find_disks() {
+    local lbl dev part real disk
+    if [ -n "${LIGHTOS_DISKS:-}" ]; then disks="$LIGHTOS_DISKS"; return; fi
+    for lbl in PORTEUS PORTEUX EFIBOOT porteus porteux; do
+        dev=$(blkid -L "$lbl" 2>/dev/null) || continue
+        part="${dev##*/}"
+        real=$(readlink -f "$SYS/class/block/$part" 2>/dev/null) || continue
+        case "$real" in *usb*) ;; *) continue ;; esac     # USB sticks only
+        disk="${real%/*}"; disk="${disk##*/}"
+        [ -e "$SYS/block/$disk" ] || disk="$part"
+        case " $disks " in *" $disk "*) ;; *) disks="$disks $disk" ;; esac
+    done
+}
+
+# udev may still be coldplugging: retry for up to ~30 s
+n=0
+while [ -z "${disks// }" ] && [ $n -lt 60 ]; do
+    find_disks
+    [ -z "${disks// }" ] && { sleep 0.5; n=$((n+1)); }
+done
+[ -z "${disks// }" ] && exit 0      # not booted from a USB stick: nothing to watch
+
+: > "$RUN/lightos-bootdisk"
+for d in $disks; do echo "$d" >> "$RUN/lightos-bootdisk"; done
+
+# sleep without exec: read with a timeout on a fd nothing writes to
+exec 9<> <(:)
+while :; do
+    for d in $disks; do
+        if [ ! -e "$SYS/block/$d" ]; then
+            if [ -n "${LIGHTOS_DRYRUN:-}" ]; then echo "REBOOT disk=$d"; exit 0; fi
+            echo 1 > /proc/sys/kernel/sysrq
+            echo b > /proc/sysrq-trigger
+        fi
+    done
+    read -r -t 0.25 -u 9 _
+done

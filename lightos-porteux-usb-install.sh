@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # (C) 2025, Roberto A. Foglietta <roberto.foglietta@gmail.com> - 3-clause BSD
+# (C) 2026, festomanolo - Light OS rebranding, parallel boot and unplug features
 #
 ################################################################################
 set +o noclobber
@@ -11,7 +12,7 @@ wdr=$(dirname "$0")
 shs=$(basename "$0")
 
 variant="porteux"
-store_dirn="moonwalker"
+store_dirn="lightos"
 usage_strn="/path/$variant-bla-bla.iso [/dev/]sdx [it]"
 
 export DEVEL=${DEVEL:-0}
@@ -38,7 +39,7 @@ function missing() {
     usage errexit
 }
 
-script=$(search porteus-usb-install.sh ||:)
+script=$(search lightos-usb-install.sh ||:)
 isofile=${1:-}
 dev=${2:-1}
 

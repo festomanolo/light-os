@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # (C) 2025, Roberto A. Foglietta <roberto.foglietta@gmail.com> - 3-clause BSD
+# (C) 2026, festomanolo - Light OS rebranding, parallel boot and unplug features
 #
 ################################################################################
 set +o noclobber
@@ -10,7 +11,7 @@ set -e
 wdr=$(dirname "$0")
 shs=$(basename "$0")
 
-store_dirn="moonwalker"
+store_dirn="lightos"
 usage_strn="[--user-menu] /path/file.iso [/dev/]sdx [it] [--ext4-install]"
 
 export DEVEL=${DEVEL:-0}
@@ -36,9 +37,9 @@ make_ext4fs_lazyone="-E lazy_itable_init=1,lazy_journal_init=1"
 make_ext4fs_notlazy="-E lazy_itable_init=0,lazy_journal_init=0"
 boot_timeout=${BOOT_TIMEOUT:-5}
 porteus_config_path="/boot/syslinux/porteus.cfg"
-background_filename="moonwalker-background.jpg"
-bootscreen_filename="moonwalker-bootscreen.png"
-usbsk_init_filename="porteus-usb-bootable.mbr.gz"
+background_filename="lightos-background.jpg"
+bootscreen_filename="lightos-bootscreen.png"
+usbsk_init_filename="lightos-usb-bootable.mbr.gz"
 
 # RAF: basic common functions #_________________________________________________
 
@@ -95,7 +96,7 @@ fi
 
 if is_on_demand; then
     perr \\n"ERROR: this script is NOT supposed being executed on-demand, abort!"
-    perr \\n"       For remote installation, use porteus-net-install.sh, instead"\\n
+    perr \\n"       For remote installation, use lightos-net-install.sh, instead"\\n
     errexit
 fi
 
@@ -492,7 +493,7 @@ function cpvfatext4() {
 
 function copy_core_files_to_dst() {
     local dst=$1 dev=
-    printf "INFO: copying Porteus core system files ... "
+    printf "INFO: copying Light OS core system files ... "
     timereal cpvfatext4 -arf ${src}/*.txt ${src}/porteus ${dst}
     if [ -n "${bsi}" ]; then
         lpd=${dst}/porteus/rootcopy
@@ -507,7 +508,7 @@ function copy_core_files_to_dst() {
 
 function copy_boot_files_to_dst() {
     mount -o loop,ro ${iso} ${src} || errexit
-    printf "INFO: copying Porteus EFI/boot files from ISO file ... "
+    printf "INFO: copying Light OS EFI/boot files from ISO file ... "
     timereal cpvfatext4 -arf ${src}/boot ${src}/EFI ${dst}
     test -r ${dst}/${cfg} || missing ${dst}/${cfg}
     str=" ${kargs}"; is_ext4_install || str="/${sve} ${kargs}"
@@ -519,7 +520,7 @@ function copy_boot_files_to_dst() {
     fi
 }
 
-# Copying Porteus files from ISO file #________________________________
+# Copying Light OS files from ISO file #________________________________
 
 echo
 copy_boot_files_to_dst ${dst}
@@ -554,7 +555,7 @@ if false; then
     timereal umount /dev/${dev}? ||:
 fi
 
-# Copying Porteus system and modules from ISO file #____________________________
+# Copying Light OS system and modules from ISO file #____________________________
 
 ext4img="ext4fs.img"
 dd_bs1m_zeroing() { dd if=/dev/zero bs=1M status=none "$@"; }

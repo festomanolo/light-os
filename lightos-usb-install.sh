@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # (C) 2025, Roberto A. Foglietta <roberto.foglietta@gmail.com> - 3-clause BSD
+# (C) 2026, festomanolo - Light OS rebranding, parallel boot and unplug features
 #
 ################################################################################
 set +o noclobber
@@ -10,7 +11,7 @@ set -e
 wdr=$(dirname "$0")
 shs=$(basename "$0")
 
-store_dirn="moonwalker"
+store_dirn="lightos"
 usage_strn="[--user-menu] /path/file.iso [/dev/]sdx [it] [--ext4-install]"
 
 export DEVEL=${DEVEL:-0}
@@ -40,9 +41,9 @@ make_ext4fs_notlazy="-E lazy_itable_init=0,lazy_journal_init=0"
 porteus=${VARIANT:-porteus}
 boot_timeout=${BOOT_TIMEOUT:-5}
 porteus_config_path="/boot/syslinux/${porteus}.cfg"
-background_filename="moonwalker-background.jpg"
-bootscreen_filename="moonwalker-bootscreen.png"
-usbsk_init_filename="porteus-usb-bootable.mbr.gz"
+background_filename="lightos-background.jpg"
+bootscreen_filename="lightos-bootscreen.png"
+usbsk_init_filename="lightos-usb-bootable.mbr.gz"
 
 # RAF: basic common functions #_________________________________________________
 
@@ -104,7 +105,7 @@ function is_real_porteus() { test "${porteus}" == "porteus"; }
 
 if is_on_demand; then
     perr \\n"ERROR: this script is NOT supposed being executed on-demand, abort!"
-    perr \\n"       For remote installation, use porteus-net-install.sh, instead"\\n
+    perr \\n"       For remote installation, use lightos-net-install.sh, instead"\\n
     errexit
 fi
 
@@ -540,7 +541,7 @@ else # ----------------------------------------------------------------- VFAT --
 
 fi # ---------------------------------------------------------------------------
 
-# Copying Porteus EFI/boot files from ISO file #________________________________
+# Copying Light OS EFI/boot files from ISO file #________________________________
 
 function _cpvfatext4() {
     local opt="-L"; is_ext4_install && opt=""
@@ -553,10 +554,10 @@ function cpvfatext4 {
 }
 
 mount -o loop,ro ${iso} ${src} || errexit
-print_dtms \\n "INFO: copying ${porteus^} EFI/boot files from ISO file ... "
+print_dtms \\n "INFO: copying Light OS EFI/boot files from ISO file ... "
 cpvfatext4 ${src}/boot ${src}/EFI ${dst}
 
-# RAF: these executables might not work w/moonwalker edition
+# RAF: these executables might not work w/Light OS edition
 rm -f ${dst}/boot/*.{com,exe,run} 2>/dev/null ||:
 
 # RAF: copy the boot logo and similar stuff, then removed 
@@ -616,16 +617,16 @@ if false; then
 fi
 fi # ---------------------------------------------------------------------------
 
-# Copying Porteus system and modules from ISO file#_____________________________
+# Copying Light OS system and modules from ISO file#_____________________________
 
-print_dtms \\n "INFO: copying ${porteus^} core system files ... "
+print_dtms \\n "INFO: copying Light OS core system files ... "
 cpvfatext4 ${src}/*.txt ${src}/${porteus} ${dst}; echo
 du -m ${dst}/${porteus}/*/*.xzm 2>&1 | sort -n | tabout
 
 if is_real_porteus; then
     d=$(dirname $iso); lst=$(ls -1 $d/*.xzm 2>/dev/null ||:)
     if [ -n "$lst" ]; then
-        print_dtms \\n "INFO: copying ${porteus^} modules files ... "
+        print_dtms \\n "INFO: copying Light OS modules files ... "
         if false; then
             d=${dst}/${porteus}/modules; cpvfatext4 $lst $d/
         else
@@ -644,15 +645,7 @@ s=$(search rootcopy ||:); if [ -n "$s" ]; then
     print_dtms \\n "INFO: copying rootcopy custom files ... "
     d=${dst}/${porteus}; cpvfatext4 $s $d/
 
-    a=$d/rootcopy/usr/share
-    if ! is_ext4_install; then
-        rm -f $a/wallpapers/moonwalker.jpg
-        is_real_porteus &&\
-            rm -f $a/backgrounds/Ubuntu-Mate-Cold-no-logo.jpg
-    else
-        is_real_porteus ||\
-            rm -f $a/wallpapers/porteus.jpg
-    fi
+    a=$d/rootcopy/usr/share  # Light OS: wallpaper links point to lightos.jpg, keep it
     str=$(ls -1 $a/{wallpapers,backgrounds}/*.jpg ||:)
     test -n "$str" && printf \\n"$str"\\n | tabout
 
@@ -660,7 +653,7 @@ s=$(search rootcopy ||:); if [ -n "$s" ]; then
     s=$g/.config/dconf/${porteus}
     test -r $s.gz && zcat $s.gz > $s
     chown -R ${guest_owner} $g/ 2>/dev/null ||:
-    chmod a+rx $d/rootcopy/usr/local/bin/*.sh 2>/dev/null ||:
+    chmod a+rx $d/rootcopy/usr/local/bin/* $d/rootcopy/etc/rc.d/rc.local 2>/dev/null ||:
 fi
 
 echo; test "$yet2cfg" == "yes" && porteus_configure

@@ -1,11 +1,12 @@
 #!/bin/bash
 #
 # (C) 2025, Roberto A. Foglietta <roberto.foglietta@gmail.com> - 3-clause BSD
+# (C) 2026, festomanolo - Light OS rebranding, parallel boot and unplug features
 #
 # Support for expert users wishing to test on-demand installation starts from
 #
 # URL: https://raw.githubusercontent.com/festonolo/light-os
-# VER:                         /refs/tags/v0.3.6/porteus-net-install.sh
+# VER:                         /refs/tags/v0.3.6/lightos-net-install.sh
 # MAN:                           ?tab=readme-ov-file#usage-quick--dirty
 #
 # It is suggest testing on a spare machine that does NOT hold valuable data,
@@ -19,7 +20,7 @@ set -e
 wdr=$(dirname "$0")
 shs=$(basename "$0")
 
-store_dirn="moonwalker"
+store_dirn="lightos"
 usage_strn="[<type> <url> <arch> <vers>] [/dev/sdx] [it]"
 
 export DEVEL=${DEVEL:-0}
@@ -32,14 +33,14 @@ export porteus_version=${porteus_version:-Porteus-v5.1} #current
 
 ## RAF: defined by `mirror-selection` script
 export sha256_file=${sha256_file:-sha256sums.txt}
-export mirror_file=${mirror_file:-porteus-mirror-selected.txt}
+export mirror_file=${mirror_file:-lightos-mirror-selected.txt}
 export mirror_dflt=${mirror_dflt:-https://mirrors.dotsrc.org/porteus}
 
 # RAF: internal values #________________________________________________________
 
-modules_script_name="porteus-xzm-download.sh"
-mirrors_script_name="porteus-mirror-selection.sh"
-usbinst_script_name="porteus-usb-install.sh"
+modules_script_name="lightos-xzm-download.sh"
+mirrors_script_name="lightos-mirror-selection.sh"
+usbinst_script_name="lightos-usb-install.sh"
 
 # RAF: basic common functions #_________________________________________________
 
@@ -123,7 +124,7 @@ echo me cmd:$$:$cmd; bash -i <(cat test.sh)
 tagver="v0.3." # To replace with the lastest available in tags
 rawurl="https://raw.githubusercontent.com/festonolo"
 rawurl="$rawurl/light-os/refs/tags/$tagver"
-rawurl="$rawurl/porteus-net-install.sh"
+rawurl="$rawurl/lightos-net-install.sh"
 DEVEL=0 # bash -i <(wget -qO- $net_inst_url)
 
 #\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\

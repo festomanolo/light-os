@@ -1,0 +1,11 @@
+#!/bin/sh
+# Light OS (festomanolo): first-login desktop branding for each user.
+# Runs once per user (marker file), so later user choices are kept.
+mark="$HOME/.config/lightos-branded"
+[ -e "$mark" ] && exit 0
+wp="file:///usr/share/wallpapers/lightos.jpg"
+gsettings set org.gnome.desktop.background picture-uri "$wp" 2>/dev/null
+gsettings set org.gnome.desktop.background picture-uri-dark "$wp" 2>/dev/null
+gsettings set org.gnome.desktop.background picture-options 'zoom' 2>/dev/null
+gsettings set org.gnome.desktop.screensaver picture-uri "$wp" 2>/dev/null
+mkdir -p "$HOME/.config" && : > "$mark"

@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # (C) 2025, Roberto A. Foglietta <roberto.foglietta@gmail.com> - 3-clause BSD
+# (C) 2026, festomanolo - Light OS rebranding and parallel-boot/unplug features
 #
 ################################################################################
 set +o noclobber
@@ -10,7 +11,7 @@ set -e
 wdr=$(dirname "$0")
 shs=$(basename "$0")
 
-store_dirn="moonwalker"
+store_dirn="lightos"
 usage_strn="/path/file.iso it <boot.iso | /dev/sdX --write-on-device>"
 
 export DEVEL=${DEVEL:-0}

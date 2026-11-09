@@ -1,25 +1,40 @@
-## Light OS - Porteus live USB bootable installer
+<div align="center"><img src="branding/lightos-logo-pixel-128.png" width="128" alt="Light OS"></div>
 
-It creates a bootable USB with 128MB for persistence.
+## Light OS - live USB operating system, by festomanolo
 
-- Porteus root password: **toor**
+Light OS is developed by **festomanolo**. It is a fast live system that runs from a USB stick, built on top of [Porteus](https://porteus.org) (Slackware), and its installer creates a bootable USB with 128MB for persistence.
+
+- Plug the stick, boot, work. Unplug the stick and the PC reboots into its normal OS: nothing stays behind, RAM is wiped.
+- Light OS root password: **toor**
 
 - Background image source: [Newsweek](https://www.newsweek.com/government-report-new-space-race-nasa-china-1736843)
 
-- Usage: `bash porteus-usb-install.sh /path/file.iso [/dev/]sdx [it] [--ext4-install]`
+- Usage: `bash lightos-usb-install.sh /path/file.iso [/dev/]sdx [it] [--ext4-install]`
    - When everything is already local and updated as per the latest ISO.
    - Long option creates a USB bootable installation instead of a LIVE.
    - Performances LIVE vs EXT4 may greatly vary depending on USB stick.
    - First EXT4 installation boot is **slow** because lazy mkfs options.
    - Some USB2 sticks allow legacy boot only, it may be disabled in BIOS.
 
-- Usage: `bash porteus-net-install.sh [<type> <url> <arch> <vers>] [/dev/sdx] [it]`
+- Usage: `bash lightos-net-install.sh [<type> <url> <arch> <vers>] [/dev/sdx] [it]`
    - when downloading the ISO and retrieving this repo scripts is needed.
 
-- Usage: `bash porteus-mirror-selection.sh [--clean]`
+- Usage: `bash lightos-mirror-selection.sh [--clean]`
    - check among the available mirrors the fastest one for downloading.  
 
 The v0.2.0 has been reported that it works also for [PorteuX](https://github.com/porteux/porteux) but I did not test it and I am not granting the compatibility for the future.
+
+---
+
+### Light OS features
+
+**Fast boot.** The default boot entry runs straight from the USB stick: it does not wait to copy the whole system into RAM first (the "copy to RAM" entry is still in the menu if you prefer it), the menu timeout is 0.5s, and the kernel runs quiet. The init scripts of the base system already start networking, D-Bus, the logger, ACPI, services and the rest as concurrent background jobs, so Light OS keeps them and does not replace them.
+
+**Plug and play.** The image ships udev, udisks2 and gvfs (USB drives, phones via MTP), NetworkManager with wpa_supplicant and Wi-Fi firmware, Bluetooth (BlueZ + btusb), PulseAudio and USB audio, webcams (uvcvideo), libinput, and the Mesa/AMD/Intel/nouveau graphics stack. No printing service (CUPS) is started, so printers are not plug and play. Internal disks are never auto-mounted (`noauto`), so the PC's own disks stay untouched.
+
+**Unplug and go back.** Pull the boot stick and the machine resets immediately, the live session is gone from RAM, and the PC starts its normal OS. Two independent mechanisms do it: a udev rule (`99-lightos-usb-unplug.rules`) and a watchdog (`lightos-boot-watch`) that polls the boot disk using shell builtins only, so it still works once the stick that holds the system binaries is gone. Add `nounplug` to the kernel cmdline to switch it off.
+
+Build the ISO with `bash tools/rebuild-iso.sh [input.iso] [output.iso]`.
 
 ---
 
@@ -31,7 +46,7 @@ The v0.2.0 has been reported that it works also for [PorteuX](https://github.com
 
 </div>
 
-To understand the difference between the two variants, the LIVE is the most similar to the original Porteus while the EXT4 allows one to install a system from scratch. The timings of these two examples are referring to Porteus v5.1 (alpha2) an USB 2.0 usbstick 64GB paid €3.11 on Temu:
+To understand the difference between the two variants, the LIVE is the most similar to the original Porteus (the upstream base of Light OS) while the EXT4 allows one to install a system from scratch. The timings of these two examples are referring to Porteus v5.1 (alpha2) an USB 2.0 usbstick 64GB paid €3.11 on Temu:
 
 ```
 INFO: Creation LIVE usbstick completed in 34 seconds.
@@ -95,7 +110,7 @@ Noticeably, the USB boot can be replaced by the network boot initiated by the BI
 
 #### Booting from u/SD
 
-The most convenient way to boot from a non-USB u/SD embedded card reader is to install a specific boot option into your grub/windows for a multi-boot system, or create the u/SD as an Moonwalker's Porteous EXT4/INST and the other one as VFAT/LIVE. In that way the usbstick will serve as repair, maintenance and booting device while the other as a main installed Porteus. Alternatively, both devices in EXT4/INST and on the USB the 2nd partition can be formatted or removed (e.g. by gparted), to gain more free space.
+The most convenient way to boot from a non-USB u/SD embedded card reader is to install a specific boot option into your grub/windows for a multi-boot system, or create the u/SD as an EXT4/INST and the other one as VFAT/LIVE. In that way the usbstick will serve as repair, maintenance and booting device while the other as a main installed Light OS. Alternatively, both devices in EXT4/INST and on the USB the 2nd partition can be formatted or removed (e.g. by gparted), to gain more free space.
 
 ---
 
@@ -113,7 +128,7 @@ Without those files the scripts in this project cannot work and making them work
 
 ### Default choices
 
-This is a list of system choices that I made in advance for customising the Porteus **moonwalker** edition.
+This is a list of system choices that I made in advance for customising the **Light OS** edition.
 
 1. The script is not executable by default, hence it requires to be run by a shell. An extra caution: even if it requires root password, the session could be already on sudo or root.
 
@@ -171,7 +186,7 @@ Download mirrors list:
 
 - [porteus.org/porteus-mirrors.html](https://porteus.org/porteus-mirrors.html)
 
-- [porteus-mirror-allhttps.txt](porteus-mirror-allhttps.txt) (local)
+- [lightos-mirror-allhttps.txt](lightos-mirror-allhttps.txt) (local)
 
 Installation tested:
 
@@ -190,7 +205,7 @@ mkdir -p usbtest; cd usbtest
 tagver="v0.3.6" # To replace with the latest available in tags
 rawurl="https://raw.githubusercontent.com/festonolo"
 rawurl="$rawurl/light-os/refs/tags/$tagver"
-rawurl="$rawurl/porteus-net-install.sh"
+rawurl="$rawurl/lightos-net-install.sh"
 DEVEL=0 # bash <(wget -qO- $net_inst_url)
 ```
 
@@ -201,10 +216,10 @@ Booting Porteus in RAM-only (Flash) mode, it will be possible to execute the scr
 ```
 mkdir -p usbtest; cd usbtest
 wget -qO- http://alturl.com/ggvaa | tar xvz
-mv light-os-main moonwalker
-DEVEL=0 # bash moonwalker/porteus-net-install.sh
+mv light-os-main lightos
+DEVEL=0 # bash lightos/lightos-net-install.sh
 # or to simulate a remote call
-# DEVEL=0 # bash <(cat moonwalker/porteus-net-install.sh)
+# DEVEL=0 # bash <(cat lightos/lightos-net-install.sh)
 ```
 
 If &ndash; **for you** &ndash; the shell code above does nothing, then it is ok in that way: do not use it. ;-)
@@ -259,6 +274,10 @@ Are you more of an embedded guy/girl? In this case, I suggest [TinyCore](http://
 
 ### Copyright
 
-(C) 2025, Roberto A. Foglietta &lt;roberto.foglietta@gmail.com&gt;, licensed under BSD 3-clauses terms.
+(C) 2026, **festomanolo** - Light OS rebranding, parallel boot, plug-and-play and USB-unplug features.
 
-**Note**: the boot screen image, also used for background, is included here as per *fair-use* terms, only.
+(C) 2025, Roberto A. Foglietta &lt;roberto.foglietta@gmail.com&gt; - original installer scripts this project is derived from. Both licensed under BSD 3-clauses terms (see LICENSE).
+
+Light OS is built on [Porteus](https://porteus.org); Porteus is a trademark of its authors.
+
+**Note**: the Light OS logo is a pixelated rendering of the festomanolo mark.

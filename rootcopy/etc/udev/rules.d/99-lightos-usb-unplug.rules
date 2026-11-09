@@ -1,4 +1,7 @@
-# Light OS: Automatically reboot back to the host OS when the boot USB is unplugged
-ACTION=="remove", SUBSYSTEM=="block", ENV{ID_FS_LABEL}=="PORTEUS|PORTEUX|EFIBOOT|porteus|porteux|usrdata", RUN+="/usr/local/bin/lightos-usb-unplug.sh %E{ID_FS_LABEL} %k"
-ACTION=="remove", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="disk", RUN+="/usr/local/bin/lightos-usb-unplug.sh %E{ID_FS_LABEL} %k"
-ACTION=="remove", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", RUN+="/usr/local/bin/lightos-usb-unplug.sh usb_device %k"
+# Light OS (festomanolo): when the boot USB stick is pulled, reset the machine
+# so the PC returns to its normal OS. Partitions are removed before the disk,
+# so the label (ID_FS_LABEL, kept in the udev db) is available for matching.
+# Run through /bin/sh explicitly so it works even if the exec bit is lost (FAT).
+ACTION=="remove", SUBSYSTEM=="block", ENV{ID_FS_LABEL}=="PORTEUS|PORTEUX|EFIBOOT|porteus|porteux|usrdata", RUN+="/bin/sh /usr/local/bin/lightos-usb-unplug.sh $env{ID_FS_LABEL} %k"
+# Whole-disk removal of any USB disk is also checked against the recorded boot disk
+ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", RUN+="/bin/sh /usr/local/bin/lightos-usb-unplug.sh '' %k"

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Light OS GUI helper
+Comment=Light OS GUI helper
+Exec=/opt/porteus-scripts/xorg/gui-autostart
+

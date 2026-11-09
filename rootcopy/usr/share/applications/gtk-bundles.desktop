@@ -1,0 +1,13 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Bundles
+Name[ru]=Бандлы
+Comment=Light OS Bundles
+Comment[ru]=Комплекты ПО для Light OS
+GenericName=Light OS Software Bundles
+Exec=/opt/porteus-scripts/xorg/psu /opt/porteus-scripts/gtk-bundles
+Terminal=false
+X-MultipleArgs=false
+Type=Application
+Icon=cdr
+Categories=Application;System;

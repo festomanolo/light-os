@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Light OS session setup
+Exec=/bin/sh /usr/local/bin/lightos-session-setup
+NoDisplay=true
+X-GNOME-Autostart-Phase=Applications

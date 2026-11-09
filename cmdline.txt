@@ -1,1 +1,1 @@
-copy2ram noswap noauto utc rootmount zram=25% intel_iommu=on amd_iommu=on iommu=pt
+noswap noauto usbonly utc rootmount zram=25% intel_iommu=on amd_iommu=on iommu=pt quiet loglevel=3 nowatchdog
