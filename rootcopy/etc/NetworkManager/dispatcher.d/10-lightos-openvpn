@@ -1,0 +1,45 @@
+#!/bin/bash
+#
+# NetworkManager dispatcher hook for Light OS OpenVPN + Default Kill Switch
+#
+# Enforces the firewall kill switch before/during Wi-Fi connection and
+# automatically starts OpenVPN as soon as Wi-Fi or Ethernet comes up.
+#
+
+IFACE="${1:-}"
+ACTION="${2:-}"
+
+case "$IFACE" in
+    lo)
+        exit 0
+        ;;
+esac
+
+case "$ACTION" in
+    pre-up)
+        /usr/local/bin/lightos-vpn-killswitch pre-up "$IFACE" >/dev/null 2>&1 || true
+        ;;
+    up)
+        case "$IFACE" in
+            tun*|tap*)
+                exit 0
+                ;;
+        esac
+        if [ -r /proc/cmdline ] && grep -Eq '(^|[[:space:]])(novpn|nokillswitch)([[:space:]]|$)' /proc/cmdline; then
+            exit 0
+        fi
+        /usr/local/bin/lightos-vpn-killswitch pre-up "$IFACE" >/dev/null 2>&1 || true
+        ( /usr/local/bin/lightos-vpn-killswitch connect >/dev/null 2>&1 & )
+        ;;
+    down|vpn-down)
+        if [ -r /proc/cmdline ] && grep -Eq '(^|[[:space:]])(novpn|nokillswitch)([[:space:]]|$)' /proc/cmdline; then
+            exit 0
+        fi
+        # Ensure kill switch remains locked when Wi-Fi or VPN drops
+        if [ -f /run/lightos-vpn/killswitch.enabled ]; then
+            /usr/local/bin/lightos-vpn-killswitch enable >/dev/null 2>&1 || true
+        fi
+        ;;
+esac
+
+exit 0

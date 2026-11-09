@@ -5,6 +5,9 @@
 # detached into the background and nothing may wait: the desktop starts only
 # after this script returns.
 
+# Arm default OpenVPN pre-Wi-Fi kill switch at boot (unless novpn/nokillswitch boot param is set)
+/usr/local/bin/lightos-vpn-killswitch boot >/dev/null 2>&1 || true
+
 # Watch the boot stick: unplug => immediate reset => PC returns to its own OS
 ( bash /usr/local/bin/lightos-boot-watch >/dev/null 2>&1 </dev/null & )
 

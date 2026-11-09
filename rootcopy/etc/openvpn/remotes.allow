@@ -1,0 +1,6 @@
+# /etc/openvpn/remotes.allow — Additional whitelisted OpenVPN server endpoints
+# Format: <ip-or-cidr> [port] [udp|tcp]
+#
+# Any remote server listed in /etc/openvpn/*.ovpn or /etc/openvpn/*.conf is
+# whitelisted automatically by `lightos-vpn-killswitch`. You can add extra
+# fallback VPN gateway IPs here if needed.

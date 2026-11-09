@@ -1,0 +1,27 @@
+#!/bin/bash
+#
+# /etc/rc.d/rc.openvpn — Light OS OpenVPN & Pre-Wi-Fi Kill Switch service
+#
+
+case "${1:-start}" in
+    start)
+        /usr/local/bin/lightos-vpn-killswitch boot
+        /usr/local/bin/lightos-vpn-killswitch connect || true
+        ;;
+    stop)
+        /usr/local/bin/lightos-vpn-killswitch disconnect || true
+        ;;
+    restart)
+        /usr/local/bin/lightos-vpn-killswitch restart || true
+        ;;
+    unlock|disable-killswitch)
+        /usr/local/bin/lightos-vpn-killswitch disable
+        ;;
+    status)
+        /usr/local/bin/lightos-vpn-killswitch status
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|unlock|status}"
+        exit 1
+        ;;
+esac

@@ -113,7 +113,15 @@ if [ -d "$REPO_DIR/rootcopy" ]; then
         gzip -dc "$ISOROOT/porteus/rootcopy/home/guest/.config/dconf/porteus.gz" \
             > "$ISOROOT/porteus/rootcopy/home/guest/.config/dconf/porteus"
     fi
-    chmod a+rx "$ISOROOT/porteus/rootcopy/usr/local/bin"/* "$ISOROOT/porteus/rootcopy/etc/rc.d/rc.local" 2>/dev/null || :
+    chmod a+rx \
+        "$ISOROOT/porteus/rootcopy/usr/local/bin"/* \
+        "$ISOROOT/porteus/rootcopy/usr/local/lib/voluma"/* \
+        "$ISOROOT/porteus/rootcopy/etc/rc.d/rc.local" \
+        "$ISOROOT/porteus/rootcopy/etc/rc.d/rc.openvpn" \
+        "$ISOROOT/porteus/rootcopy/etc/openvpn"/*.sh \
+        "$ISOROOT/porteus/rootcopy/etc/NetworkManager/dispatcher.d"/* \
+        "$ISOROOT/porteus/rootcopy/etc/NetworkManager/dispatcher.d/pre-up.d"/* \
+        2>/dev/null || :
 fi
 
 # 4. Copy any extra .xzm modules in repo root or lightos/

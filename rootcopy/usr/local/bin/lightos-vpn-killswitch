@@ -1,0 +1,548 @@
+#!/bin/bash
+#
+# lightos-vpn-killswitch — Default Pre-Wi-Fi OpenVPN Kill Switch for Light OS
+#
+# Locks down all non-VPN internet traffic at boot and in NetworkManager pre-up
+# BEFORE Wi-Fi finishes connecting. Only allows:
+#   1. Loopback (lo)
+#   2. Local DHCPv4 (UDP 67:68) & IPv6 link-local/ND/DHCPv6 so Wi-Fi can
+#      associate and acquire a local IP lease without leaking traffic
+#   3. Whitelisted OpenVPN remote server endpoints (from /etc/openvpn/*.ovpn)
+#   4. Traffic inside encrypted OpenVPN tunnel interfaces (tun+ / tap+)
+#
+
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+STATE_DIR="/run/lightos-vpn"
+CONF_DIR="/etc/openvpn"
+KS_CONF="${CONF_DIR}/killswitch.conf"
+DEFAULT_PROFILE="${CONF_DIR}/default.ovpn"
+REMOTES_ALLOW="${CONF_DIR}/remotes.allow"
+PID_FILE="${STATE_DIR}/openvpn.pid"
+LOG_FILE="/var/log/lightos-openvpn.log"
+ENABLED_FILE="${STATE_DIR}/killswitch.enabled"
+
+CHAIN_OUT="LIGHTOS_KS_OUT"
+CHAIN_IN="LIGHTOS_KS_IN"
+CHAIN_FWD="LIGHTOS_KS_FWD"
+CHAIN_REM="LIGHTOS_VPN_REMOTES"
+
+CHAIN6_OUT="LIGHTOS_KS6_OUT"
+CHAIN6_IN="LIGHTOS_KS6_IN"
+CHAIN6_FWD="LIGHTOS_KS6_FWD"
+CHAIN6_REM="LIGHTOS_VPN6_REMOTES"
+
+mkdir -p "$STATE_DIR" "$CONF_DIR"
+
+# Defaults (can be overridden in /etc/openvpn/killswitch.conf)
+KILLSWITCH_ENABLED=1
+AUTO_CONNECT_ON_WIFI=1
+ALLOW_LAN=0
+STRICT_VPN_DNS=1
+
+if [ -f "$KS_CONF" ]; then
+    # shellcheck disable=SC1090
+    . "$KS_CONF"
+fi
+
+log_msg() {
+    local msg="$*"
+    logger -t "lightos-vpn-killswitch" "$msg" 2>/dev/null || true
+    printf '[lightos-vpn-killswitch] %s\n' "$msg"
+}
+
+cmdline_has_disable() {
+    if [ -r /proc/cmdline ]; then
+        grep -Eq '(^|[[:space:]])(novpn|nokillswitch)([[:space:]]|$)' /proc/cmdline && return 0
+    fi
+    return 1
+}
+
+ensure_tun_device() {
+    modprobe tun >/dev/null 2>&1 || true
+    mkdir -p /dev/net
+    if [ ! -c /dev/net/tun ]; then
+        mknod /dev/net/tun c 10 200 2>/dev/null || true
+    fi
+    chmod 0666 /dev/net/tun 2>/dev/null || true
+}
+
+ipt() {
+    iptables -w 5 "$@" 2>/dev/null || iptables "$@"
+}
+
+ip6t() {
+    if command -v ip6tables >/dev/null 2>&1; then
+        ip6tables -w 5 "$@" 2>/dev/null || ip6tables "$@"
+    else
+        return 1
+    fi
+}
+
+add_established_rule() {
+    local tool="$1"
+    local chain="$2"
+    if "$tool" -w 5 -A "$chain" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; then
+        return 0
+    fi
+    if "$tool" -A "$chain" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null; then
+        return 0
+    fi
+    "$tool" -A "$chain" -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+}
+
+is_ipv4() {
+    printf '%s' "$1" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$'
+}
+
+is_ipv6() {
+    printf '%s' "$1" | grep -Eq ':'
+}
+
+resolve_host_ips() {
+    local host="$1"
+    if is_ipv4 "$host" || is_ipv6 "$host"; then
+        printf '%s\n' "$host"
+        return 0
+    fi
+    if command -v getent >/dev/null 2>&1; then
+        getent ahosts "$host" 2>/dev/null | awk '{print $1}' | sort -u
+    fi
+}
+
+find_active_profile() {
+    local requested="${1:-}"
+    if [ -n "$requested" ] && [ -f "$requested" ]; then
+        printf '%s\n' "$requested"
+        return 0
+    fi
+    if [ -f "${STATE_DIR}/active.profile" ]; then
+        local saved
+        saved="$(cat "${STATE_DIR}/active.profile" 2>/dev/null || true)"
+        if [ -n "$saved" ] && [ -f "$saved" ]; then
+            printf '%s\n' "$saved"
+            return 0
+        fi
+    fi
+    if [ -f "$DEFAULT_PROFILE" ]; then
+        printf '%s\n' "$DEFAULT_PROFILE"
+        return 0
+    fi
+    local f
+    for f in "${CONF_DIR}"/*.ovpn "${CONF_DIR}"/*.conf; do
+        [ -f "$f" ] || continue
+        [ "$(basename "$f")" = "killswitch.conf" ] && continue
+        printf '%s\n' "$f"
+        return 0
+    done
+    return 1
+}
+
+profile_has_configured_remote() {
+    local prof="$1"
+    [ -f "$prof" ] || return 1
+    awk '
+        /^[[:space:]]*(#|;)/ { next }
+        $1 == "remote" && $2 != "" && $2 != "my-server-1" && $2 != "vpn.example.com" && $2 != "0.0.0.0" {
+            found=1
+        }
+        END { exit(found ? 0 : 1) }
+    ' "$prof"
+}
+
+reload_remotes() {
+    ipt -N "$CHAIN_REM" 2>/dev/null || true
+    ipt -F "$CHAIN_REM" 2>/dev/null || true
+    ip6t -N "$CHAIN6_REM" 2>/dev/null || true
+    ip6t -F "$CHAIN6_REM" 2>/dev/null || true
+
+    local count=0
+    local files=()
+    local f
+    for f in "${CONF_DIR}"/*.ovpn "${CONF_DIR}"/*.conf; do
+        [ -f "$f" ] || continue
+        [ "$(basename "$f")" = "killswitch.conf" ] && continue
+        files+=("$f")
+    done
+
+    if [ "${#files[@]}" -gt 0 ]; then
+        while IFS=' ' read -r host port proto; do
+            [ -n "$host" ] || continue
+            [ "$host" = "my-server-1" ] && continue
+            [ "$host" = "vpn.example.com" ] && continue
+            [ -n "$port" ] || port="1194"
+            proto="$(printf '%s' "${proto:-udp}" | tr '[:upper:]' '[:lower:]')"
+            case "$proto" in
+                tcp*) proto="tcp" ;;
+                udp*) proto="udp" ;;
+                *) proto="udp" ;;
+            esac
+
+            local ip
+            while IFS= read -r ip; do
+                [ -n "$ip" ] || continue
+                if is_ipv4 "$ip"; then
+                    ipt -A "$CHAIN_REM" -p "$proto" -d "$ip" --dport "$port" -j ACCEPT
+                    count=$((count + 1))
+                elif is_ipv6 "$ip"; then
+                    ip6t -A "$CHAIN6_REM" -p "$proto" -d "$ip" --dport "$port" -j ACCEPT
+                    count=$((count + 1))
+                fi
+            done < <(resolve_host_ips "$host")
+        done < <(awk '
+            /^[[:space:]]*(#|;)/ { next }
+            $1 == "remote" && $2 != "" {
+                print $2, ($3 != "" ? $3 : "1194"), ($4 != "" ? $4 : "")
+            }
+        ' "${files[@]}" 2>/dev/null)
+    fi
+
+    if [ -f "$REMOTES_ALLOW" ]; then
+        while IFS=' ' read -r host port proto; do
+            [ -n "$host" ] || continue
+            case "$host" in \#*|\;*) continue ;; esac
+            if [ -n "$port" ] && [ -n "$proto" ]; then
+                if is_ipv4 "$host"; then
+                    ipt -A "$CHAIN_REM" -p "$proto" -d "$host" --dport "$port" -j ACCEPT
+                    count=$((count + 1))
+                elif is_ipv6 "$host"; then
+                    ip6t -A "$CHAIN6_REM" -p "$proto" -d "$host" --dport "$port" -j ACCEPT
+                    count=$((count + 1))
+                fi
+            elif [ -n "$port" ]; then
+                if is_ipv4 "$host"; then
+                    ipt -A "$CHAIN_REM" -p udp -d "$host" --dport "$port" -j ACCEPT
+                    ipt -A "$CHAIN_REM" -p tcp -d "$host" --dport "$port" -j ACCEPT
+                    count=$((count + 1))
+                fi
+            else
+                if is_ipv4 "$host"; then
+                    ipt -A "$CHAIN_REM" -d "$host" -j ACCEPT
+                    count=$((count + 1))
+                elif is_ipv6 "$host"; then
+                    ip6t -A "$CHAIN6_REM" -d "$host" -j ACCEPT
+                    count=$((count + 1))
+                fi
+            fi
+        done < "$REMOTES_ALLOW"
+    fi
+
+    printf '%s\n' "$count" > "${STATE_DIR}/remotes.count"
+}
+
+enable_killswitch() {
+    ensure_tun_device
+
+    # Create or flush IPv4 chains
+    ipt -N "$CHAIN_OUT" 2>/dev/null || ipt -F "$CHAIN_OUT"
+    ipt -N "$CHAIN_IN" 2>/dev/null || ipt -F "$CHAIN_IN"
+    ipt -N "$CHAIN_FWD" 2>/dev/null || ipt -F "$CHAIN_FWD"
+    ipt -N "$CHAIN_REM" 2>/dev/null || true
+
+    reload_remotes
+
+    # Populate IPv4 INPUT kill switch
+    ipt -A "$CHAIN_IN" -i lo -j ACCEPT
+    add_established_rule iptables "$CHAIN_IN"
+    ipt -A "$CHAIN_IN" -p udp --sport 67:68 --dport 67:68 -j ACCEPT
+    ipt -A "$CHAIN_IN" -i tun+ -j ACCEPT
+    ipt -A "$CHAIN_IN" -i tap+ -j ACCEPT
+    if [ "${ALLOW_LAN:-0}" = "1" ]; then
+        ipt -A "$CHAIN_IN" -s 10.0.0.0/8 -j ACCEPT
+        ipt -A "$CHAIN_IN" -s 172.16.0.0/12 -j ACCEPT
+        ipt -A "$CHAIN_IN" -s 192.168.0.0/16 -j ACCEPT
+    fi
+    ipt -A "$CHAIN_IN" -j DROP
+
+    # Populate IPv4 FORWARD kill switch
+    ipt -A "$CHAIN_FWD" -i tun+ -j ACCEPT
+    ipt -A "$CHAIN_FWD" -o tun+ -j ACCEPT
+    ipt -A "$CHAIN_FWD" -i tap+ -j ACCEPT
+    ipt -A "$CHAIN_FWD" -o tap+ -j ACCEPT
+    ipt -A "$CHAIN_FWD" -j DROP
+
+    # Populate IPv4 OUTPUT kill switch (locks internet before Wi-Fi connects)
+    ipt -A "$CHAIN_OUT" -o lo -j ACCEPT
+    ipt -A "$CHAIN_OUT" -o tun+ -j ACCEPT
+    ipt -A "$CHAIN_OUT" -o tap+ -j ACCEPT
+    # Allow DHCPv4 so Wi-Fi can associate and get an IP lease without internet leak
+    ipt -A "$CHAIN_OUT" -p udp --sport 67:68 --dport 67:68 -j ACCEPT
+    # Allow whitelisted OpenVPN remote servers so OpenVPN can establish the tunnel
+    ipt -A "$CHAIN_OUT" -j "$CHAIN_REM"
+    if [ "${ALLOW_LAN:-0}" = "1" ]; then
+        ipt -A "$CHAIN_OUT" -d 10.0.0.0/8 -j ACCEPT
+        ipt -A "$CHAIN_OUT" -d 172.16.0.0/12 -j ACCEPT
+        ipt -A "$CHAIN_OUT" -d 192.168.0.0/16 -j ACCEPT
+    fi
+    # Reject/Drop all non-VPN outbound traffic
+    ipt -A "$CHAIN_OUT" -j REJECT --reject-with icmp-net-prohibited 2>/dev/null || ipt -A "$CHAIN_OUT" -j DROP
+
+    # Ensure jump hooks are at position 1 in OUTPUT, INPUT, FORWARD
+    while ipt -D OUTPUT -j "$CHAIN_OUT" 2>/dev/null; do :; done
+    while ipt -D INPUT -j "$CHAIN_IN" 2>/dev/null; do :; done
+    while ipt -D FORWARD -j "$CHAIN_FWD" 2>/dev/null; do :; done
+    ipt -I OUTPUT 1 -j "$CHAIN_OUT"
+    ipt -I INPUT 1 -j "$CHAIN_IN"
+    ipt -I FORWARD 1 -j "$CHAIN_FWD"
+
+    # IPv6 Kill Switch (prevents IPv6 bypass/leaks while allowing Wi-Fi ND/RA/DHCPv6)
+    if command -v ip6tables >/dev/null 2>&1; then
+        ip6t -N "$CHAIN6_OUT" 2>/dev/null || ip6t -F "$CHAIN6_OUT"
+        ip6t -N "$CHAIN6_IN" 2>/dev/null || ip6t -F "$CHAIN6_IN"
+        ip6t -N "$CHAIN6_FWD" 2>/dev/null || ip6t -F "$CHAIN6_FWD"
+        ip6t -N "$CHAIN6_REM" 2>/dev/null || true
+
+        ip6t -A "$CHAIN6_IN" -i lo -j ACCEPT
+        add_established_rule ip6tables "$CHAIN6_IN"
+        ip6t -A "$CHAIN6_IN" -s fe80::/10 -j ACCEPT
+        ip6t -A "$CHAIN6_IN" -p ipv6-icmp --icmpv6-type 133 -j ACCEPT 2>/dev/null || ip6t -A "$CHAIN6_IN" -p icmpv6 -j ACCEPT
+        ip6t -A "$CHAIN6_IN" -p ipv6-icmp --icmpv6-type 134 -j ACCEPT 2>/dev/null || true
+        ip6t -A "$CHAIN6_IN" -p ipv6-icmp --icmpv6-type 135 -j ACCEPT 2>/dev/null || true
+        ip6t -A "$CHAIN6_IN" -p ipv6-icmp --icmpv6-type 136 -j ACCEPT 2>/dev/null || true
+        ip6t -A "$CHAIN6_IN" -p udp --sport 546:547 --dport 546:547 -j ACCEPT
+        ip6t -A "$CHAIN6_IN" -i tun+ -j ACCEPT
+        ip6t -A "$CHAIN6_IN" -i tap+ -j ACCEPT
+        ip6t -A "$CHAIN6_IN" -j DROP
+
+        ip6t -A "$CHAIN6_FWD" -i tun+ -j ACCEPT
+        ip6t -A "$CHAIN6_FWD" -o tun+ -j ACCEPT
+        ip6t -A "$CHAIN6_FWD" -j DROP
+
+        ip6t -A "$CHAIN6_OUT" -o lo -j ACCEPT
+        ip6t -A "$CHAIN6_OUT" -o tun+ -j ACCEPT
+        ip6t -A "$CHAIN6_OUT" -o tap+ -j ACCEPT
+        ip6t -A "$CHAIN6_OUT" -d fe80::/10 -j ACCEPT
+        ip6t -A "$CHAIN6_OUT" -p ipv6-icmp --icmpv6-type 133 -j ACCEPT 2>/dev/null || ip6t -A "$CHAIN6_OUT" -p icmpv6 -j ACCEPT
+        ip6t -A "$CHAIN6_OUT" -p ipv6-icmp --icmpv6-type 134 -j ACCEPT 2>/dev/null || true
+        ip6t -A "$CHAIN6_OUT" -p ipv6-icmp --icmpv6-type 135 -j ACCEPT 2>/dev/null || true
+        ip6t -A "$CHAIN6_OUT" -p ipv6-icmp --icmpv6-type 136 -j ACCEPT 2>/dev/null || true
+        ip6t -A "$CHAIN6_OUT" -p udp --sport 546:547 --dport 546:547 -j ACCEPT
+        ip6t -A "$CHAIN6_OUT" -j "$CHAIN6_REM"
+        ip6t -A "$CHAIN6_OUT" -j REJECT 2>/dev/null || ip6t -A "$CHAIN6_OUT" -j DROP
+
+        while ip6t -D OUTPUT -j "$CHAIN6_OUT" 2>/dev/null; do :; done
+        while ip6t -D INPUT -j "$CHAIN6_IN" 2>/dev/null; do :; done
+        while ip6t -D FORWARD -j "$CHAIN6_FWD" 2>/dev/null; do :; done
+        ip6t -I OUTPUT 1 -j "$CHAIN6_OUT"
+        ip6t -I INPUT 1 -j "$CHAIN6_IN"
+        ip6t -I FORWARD 1 -j "$CHAIN6_FWD"
+    fi
+
+    printf 'armed\n' > "$ENABLED_FILE"
+    log_msg "Kill switch ARMED (all non-VPN internet traffic blocked; DHCP & tun+ allowed)."
+}
+
+disable_killswitch() {
+    while ipt -D OUTPUT -j "$CHAIN_OUT" 2>/dev/null; do :; done
+    while ipt -D INPUT -j "$CHAIN_IN" 2>/dev/null; do :; done
+    while ipt -D FORWARD -j "$CHAIN_FWD" 2>/dev/null; do :; done
+
+    ipt -F "$CHAIN_OUT" 2>/dev/null || true
+    ipt -F "$CHAIN_IN" 2>/dev/null || true
+    ipt -F "$CHAIN_FWD" 2>/dev/null || true
+    ipt -F "$CHAIN_REM" 2>/dev/null || true
+
+    ipt -X "$CHAIN_OUT" 2>/dev/null || true
+    ipt -X "$CHAIN_IN" 2>/dev/null || true
+    ipt -X "$CHAIN_FWD" 2>/dev/null || true
+    ipt -X "$CHAIN_REM" 2>/dev/null || true
+
+    if command -v ip6tables >/dev/null 2>&1; then
+        while ip6t -D OUTPUT -j "$CHAIN6_OUT" 2>/dev/null; do :; done
+        while ip6t -D INPUT -j "$CHAIN6_IN" 2>/dev/null; do :; done
+        while ip6t -D FORWARD -j "$CHAIN6_FWD" 2>/dev/null; do :; done
+        ip6t -F "$CHAIN6_OUT" 2>/dev/null || true
+        ip6t -F "$CHAIN6_IN" 2>/dev/null || true
+        ip6t -F "$CHAIN6_FWD" 2>/dev/null || true
+        ip6t -F "$CHAIN6_REM" 2>/dev/null || true
+        ip6t -X "$CHAIN6_OUT" 2>/dev/null || true
+        ip6t -X "$CHAIN6_IN" 2>/dev/null || true
+        ip6t -X "$CHAIN6_FWD" 2>/dev/null || true
+        ip6t -X "$CHAIN6_REM" 2>/dev/null || true
+    fi
+
+    rm -f "$ENABLED_FILE"
+    log_msg "Kill switch DISABLED (direct internet access permitted)."
+}
+
+is_killswitch_armed() {
+    iptables -C OUTPUT -j "$CHAIN_OUT" >/dev/null 2>&1
+}
+
+is_openvpn_running() {
+    if [ -f "$PID_FILE" ]; then
+        local pid
+        pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    pgrep -x openvpn >/dev/null 2>&1
+}
+
+get_tun_device() {
+    ip -o link show 2>/dev/null | awk -F': ' '$2 ~ /^(tun|tap)[0-9]+/ {print $2; exit}'
+}
+
+get_tun_ip() {
+    local dev
+    dev="$(get_tun_device)"
+    [ -n "$dev" ] || return 0
+    ip -o -4 addr show dev "$dev" 2>/dev/null | awk '{print $4; exit}'
+}
+
+get_wifi_device() {
+    ip -o -4 addr show scope global 2>/dev/null | awk '$2 !~ /^(lo|tun|tap)/ {print $2 " (" $4 ")"; exit}'
+}
+
+connect_vpn() {
+    local requested="${1:-}"
+    local profile
+    if ! profile="$(find_active_profile "$requested")"; then
+        log_msg "No OpenVPN profile found in ${CONF_DIR}. Kill switch remains ARMED."
+        return 1
+    fi
+
+    printf '%s\n' "$profile" > "${STATE_DIR}/active.profile"
+
+    # Always ensure kill switch is armed and remotes are whitelisted before connecting
+    enable_killswitch
+
+    if ! profile_has_configured_remote "$profile"; then
+        log_msg "Profile ${profile} has placeholder remote endpoint; waiting for user .ovpn profile while keeping kill switch ARMED."
+        return 0
+    fi
+
+    if is_openvpn_running; then
+        log_msg "OpenVPN is already running."
+        return 0
+    fi
+
+    log_msg "Starting OpenVPN with profile ${profile}..."
+    /usr/sbin/openvpn \
+        --daemon lightos-openvpn \
+        --cd "$(dirname "$profile")" \
+        --config "$profile" \
+        --writepid "$PID_FILE" \
+        --log "$LOG_FILE" \
+        --script-security 2 \
+        --up /etc/openvpn/lightos-up.sh \
+        --down /etc/openvpn/lightos-down.sh
+
+    log_msg "OpenVPN daemon launched (log: ${LOG_FILE})."
+}
+
+disconnect_vpn() {
+    if [ -f "$PID_FILE" ]; then
+        local pid
+        pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            sleep 0.3
+        fi
+        rm -f "$PID_FILE"
+    fi
+    pkill -x openvpn 2>/dev/null || true
+    rm -f "${STATE_DIR}/tunnel.up"
+    log_msg "OpenVPN disconnected. Kill switch remains active."
+}
+
+import_profile() {
+    local src="${1:-}"
+    if [ -z "$src" ] || [ ! -f "$src" ]; then
+        log_msg "Usage: lightos-vpn-killswitch import /path/to/profile.ovpn"
+        return 1
+    fi
+    cp -f "$src" "$DEFAULT_PROFILE"
+    chmod 0600 "$DEFAULT_PROFILE"
+    printf '%s\n' "$DEFAULT_PROFILE" > "${STATE_DIR}/active.profile"
+    reload_remotes
+    log_msg "Imported OpenVPN profile into ${DEFAULT_PROFILE}"
+}
+
+print_status() {
+    local ks="disabled"
+    if is_killswitch_armed; then
+        ks="armed"
+    fi
+    local ovpn="stopped"
+    if is_openvpn_running; then
+        ovpn="running"
+    fi
+    local tun_dev
+    tun_dev="$(get_tun_device)"
+    local tun_ip
+    tun_ip="$(get_tun_ip)"
+    local wifi_dev
+    wifi_dev="$(get_wifi_device)"
+    local prof
+    prof="$(find_active_profile "" 2>/dev/null || printf 'none')"
+    local rem_count="0"
+    [ -f "${STATE_DIR}/remotes.count" ] && rem_count="$(cat "${STATE_DIR}/remotes.count" 2>/dev/null || printf '0')"
+
+    if [ "${1:-}" = "--json" ]; then
+        printf '{"killswitch":"%s","openvpn":"%s","tun_dev":"%s","tun_ip":"%s","phys_dev":"%s","profile":"%s","remotes_whitelisted":%s}\n' \
+            "$ks" "$ovpn" "${tun_dev:-}" "${tun_ip:-}" "${wifi_dev:-}" "$prof" "${rem_count:-0}"
+    else
+        printf 'Kill Switch : %s\n' "$(printf '%s' "$ks" | tr '[:lower:]' '[:upper:]')"
+        printf 'OpenVPN     : %s\n' "$ovpn"
+        printf 'Tunnel      : %s %s\n' "${tun_dev:-none}" "${tun_ip:+(${tun_ip})}"
+        printf 'Interface   : %s\n' "${wifi_dev:-disconnected}"
+        printf 'Profile     : %s\n' "$prof"
+        printf 'Whitelisted : %s remote endpoint rule(s)\n' "$rem_count"
+    fi
+}
+
+cmd="${1:-status}"
+shift || true
+
+case "$cmd" in
+    boot)
+        if cmdline_has_disable || [ "${KILLSWITCH_ENABLED:-1}" = "0" ]; then
+            log_msg "Boot cheatcode novpn/nokillswitch or KILLSWITCH_ENABLED=0 detected; skipping kill switch."
+            exit 0
+        fi
+        enable_killswitch
+        ;;
+    pre-up)
+        if cmdline_has_disable || [ "${KILLSWITCH_ENABLED:-1}" = "0" ]; then
+            exit 0
+        fi
+        enable_killswitch
+        ;;
+    enable|start|lock)
+        enable_killswitch
+        ;;
+    disable|stop|unlock)
+        disable_killswitch
+        ;;
+    reload-remotes)
+        reload_remotes
+        ;;
+    connect)
+        connect_vpn "${1:-}"
+        ;;
+    disconnect)
+        disconnect_vpn
+        ;;
+    restart)
+        disconnect_vpn
+        connect_vpn "${1:-}"
+        ;;
+    import)
+        import_profile "${1:-}"
+        ;;
+    status)
+        print_status "${1:-}"
+        ;;
+    json)
+        print_status "--json"
+        ;;
+    *)
+        printf 'Usage: %s {boot|pre-up|enable|disable|connect|disconnect|restart|import|reload-remotes|status|json}\n' "$0" >&2
+        exit 1
+        ;;
+esac

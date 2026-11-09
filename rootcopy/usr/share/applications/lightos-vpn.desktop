@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Light OS VPN & Kill Switch
+GenericName=OpenVPN Kill Switch Manager
+Comment=Pre-Wi-Fi OpenVPN firewall kill switch and profile manager
+Exec=/usr/local/bin/lightos-vpn-gui
+Icon=network-vpn
+Terminal=false
+Categories=Network;Security;System;Settings;
+Keywords=vpn;openvpn;killswitch;firewall;wifi;security;
+StartupNotify=true

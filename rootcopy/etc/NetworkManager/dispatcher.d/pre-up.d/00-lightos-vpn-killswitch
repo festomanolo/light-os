@@ -1,0 +1,20 @@
+#!/bin/bash
+#
+# NetworkManager pre-up hook for Light OS OpenVPN Kill Switch
+#
+# Executed synchronously BEFORE any Wi-Fi or Ethernet interface transitions
+# to the connected ("up") state, guaranteeing that zero non-VPN packets can
+# leave the system while Wi-Fi associates.
+#
+
+IFACE="${1:-}"
+ACTION="${2:-pre-up}"
+
+case "$IFACE" in
+    lo|tun*|tap*)
+        exit 0
+        ;;
+esac
+
+/usr/local/bin/lightos-vpn-killswitch pre-up "$IFACE" >/dev/null 2>&1 || true
+exit 0
